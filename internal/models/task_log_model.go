@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"task-management/internal/constants"
 )
 
 // JSONMap represents a JSONB map stored in PostgreSQL.
@@ -47,17 +49,17 @@ func (m *JSONMap) Scan(value interface{}) error {
 
 // TaskLog represents an audit log entry for changes made to a task.
 type TaskLog struct {
-	ID             uuid.UUID   `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	TaskID         uuid.UUID   `gorm:"type:uuid;not null;index" json:"task_id"`
-	Action         string      `gorm:"type:varchar(50);not null" json:"action"`
-	ActorID        *uuid.UUID  `gorm:"type:uuid;index" json:"actor_id,omitempty"`
-	FromAssigneeID *uuid.UUID  `gorm:"type:uuid" json:"from_assignee_id,omitempty"`
-	ToAssigneeID   *uuid.UUID  `gorm:"type:uuid" json:"to_assignee_id,omitempty"`
-	FromStatus     *string     `gorm:"type:varchar(50)" json:"from_status,omitempty"`
-	ToStatus       *string     `gorm:"type:varchar(50)" json:"to_status,omitempty"`
-	Notes          *string     `gorm:"type:text" json:"notes,omitempty"`
-	Metadata       JSONMap     `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
-	CreatedAt      time.Time   `gorm:"not null;default:now()" json:"created_at"`
+	ID             uuid.UUID             `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	TaskID         uuid.UUID             `gorm:"type:uuid;not null;index" json:"task_id"`
+	Action         constants.TaskAction  `gorm:"type:varchar(50);not null" json:"action"`
+	ActorID        *uuid.UUID            `gorm:"type:uuid;index" json:"actor_id,omitempty"`
+	FromAssigneeID *uuid.UUID            `gorm:"type:uuid" json:"from_assignee_id,omitempty"`
+	ToAssigneeID   *uuid.UUID            `gorm:"type:uuid" json:"to_assignee_id,omitempty"`
+	FromStatus     *constants.TaskStatus `gorm:"type:varchar(50)" json:"from_status,omitempty"`
+	ToStatus       *constants.TaskStatus `gorm:"type:varchar(50)" json:"to_status,omitempty"`
+	Notes          *string               `gorm:"type:text" json:"notes,omitempty"`
+	Metadata       JSONMap               `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
+	CreatedAt      time.Time             `gorm:"not null;default:now()" json:"created_at"`
 
 	Task          *Task       `gorm:"foreignKey:TaskID" json:"task,omitempty"`
 	ActionRef     *TaskAction `gorm:"foreignKey:Action;references:Code" json:"action_ref,omitempty"`

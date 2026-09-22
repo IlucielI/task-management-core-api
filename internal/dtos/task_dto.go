@@ -10,19 +10,19 @@ import (
 
 // CreateTaskRequest defines payload for task creation.
 type CreateTaskRequest struct {
-	Title       string     `json:"title"`
-	Description string     `json:"description,omitempty"`
-	Status      string     `json:"status,omitempty"`
-	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
+	Title       string               `json:"title"`
+	Description string               `json:"description,omitempty"`
+	Status      constants.TaskStatus `json:"status,omitempty"`
+	AssigneeID  *uuid.UUID           `json:"assignee_id,omitempty"`
 }
 
 // UpdateTaskRequest defines payload for updating an existing task.
 type UpdateTaskRequest struct {
-	Version     int        `json:"version"`
-	Title       *string    `json:"title,omitempty"`
-	Description *string    `json:"description,omitempty"`
-	Status      *string    `json:"status,omitempty"`
-	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
+	Version     int                   `json:"version"`
+	Title       *string               `json:"title,omitempty"`
+	Description *string               `json:"description,omitempty"`
+	Status      *constants.TaskStatus `json:"status,omitempty"`
+	AssigneeID  *uuid.UUID            `json:"assignee_id,omitempty"`
 }
 
 // AssignTaskRequest defines payload for assigning a task to a user.
@@ -33,31 +33,31 @@ type AssignTaskRequest struct {
 
 // TaskResponse represents formatted task entity returned to API clients.
 type TaskResponse struct {
-	ID          uuid.UUID          `json:"id"`
-	Title       string             `json:"title"`
-	Description string             `json:"description,omitempty"`
-	Status      string             `json:"status"`
-	CreatorID   uuid.UUID          `json:"creator_id"`
-	AssigneeID  *uuid.UUID         `json:"assignee_id,omitempty"`
-	TeamID      uuid.UUID          `json:"team_id"`
-	Version     int                `json:"version"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   time.Time          `json:"updated_at"`
-	Creator     *UserResponse      `json:"creator,omitempty"`
-	Assignee    *UserResponse      `json:"assignee,omitempty"`
-	Team        *TeamResponse      `json:"team,omitempty"`
-	Logs        []*TaskLogResponse `json:"logs,omitempty"`
+	ID          uuid.UUID            `json:"id"`
+	Title       string               `json:"title"`
+	Description string               `json:"description,omitempty"`
+	Status      constants.TaskStatus `json:"status"`
+	CreatorID   uuid.UUID            `json:"creator_id"`
+	AssigneeID  *uuid.UUID           `json:"assignee_id,omitempty"`
+	TeamID      uuid.UUID            `json:"team_id"`
+	Version     int                  `json:"version"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   time.Time            `json:"updated_at"`
+	Creator     *UserResponse        `json:"creator,omitempty"`
+	Assignee    *UserResponse        `json:"assignee,omitempty"`
+	Team        *TeamResponse        `json:"team,omitempty"`
+	Logs        []*TaskLogResponse   `json:"logs,omitempty"`
 }
 
 // TaskLogResponse represents an audit trail log entry for a task.
 type TaskLogResponse struct {
 	ID             uuid.UUID              `json:"id"`
-	Action         string                 `json:"action"`
+	Action         constants.TaskAction   `json:"action"`
 	ActorID        *uuid.UUID             `json:"actor_id,omitempty"`
 	FromAssigneeID *uuid.UUID             `json:"from_assignee_id,omitempty"`
 	ToAssigneeID   *uuid.UUID             `json:"to_assignee_id,omitempty"`
-	FromStatus     *string                `json:"from_status,omitempty"`
-	ToStatus       *string                `json:"to_status,omitempty"`
+	FromStatus     *constants.TaskStatus  `json:"from_status,omitempty"`
+	ToStatus       *constants.TaskStatus  `json:"to_status,omitempty"`
 	Notes          *string                `json:"notes,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 	CreatedAt      time.Time              `json:"created_at"`
@@ -87,12 +87,12 @@ type ListTasksData struct {
 
 // ListTasksQuery represents URL query parameters for task listing, filtering, and pagination.
 type ListTasksQuery struct {
-	Page       int                 `form:"page"`
-	Limit      int                 `form:"limit"`
-	Status     string              `form:"status"`
-	Title      string              `form:"title"`
-	TeamID     *uuid.UUID          `form:"team_id"`
-	CreatorID  *uuid.UUID          `form:"creator_id"`
-	AssigneeID *uuid.UUID          `form:"assignee_id"`
-	OrderBy    constants.SortOrder `form:"order_by"`
+	Page       int                  `form:"page"`
+	Limit      int                  `form:"limit"`
+	Status     constants.TaskStatus `form:"status"`
+	Title      string               `form:"title"`
+	TeamID     *uuid.UUID           `form:"team_id"`
+	CreatorID  *uuid.UUID           `form:"creator_id"`
+	AssigneeID *uuid.UUID           `form:"assignee_id"`
+	OrderBy    constants.SortOrder  `form:"order_by"`
 }

@@ -128,7 +128,7 @@ type TaskFilter struct {
 	TeamID     *uuid.UUID
 	CreatorID  *uuid.UUID
 	AssigneeID *uuid.UUID
-	Status     string
+	Status     constants.TaskStatus
 	Title      string
 	OrderBy    constants.SortOrder
 	Offset     int

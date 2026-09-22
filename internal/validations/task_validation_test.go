@@ -260,7 +260,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 	tooLongTitle := strings.Repeat("x", 256)
 	validDesc := "Updated Description"
 	validStatus := constants.TaskStatusInProgress
-	invalidStatus := "invalid_status"
+	invalidStatus := constants.TaskStatus("invalid_status")
 	validAssignee := uuid.New()
 	nilAssignee := uuid.Nil
 
@@ -443,4 +443,3 @@ func TestValidateAssignTaskRequest(t *testing.T) {
 		})
 	}
 }
-

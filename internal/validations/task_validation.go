@@ -63,8 +63,8 @@ func ValidateUpdateTaskRequest(req dtos.UpdateTaskRequest) error {
 			return nil
 		})),
 		validation.Field(&req.Status, validation.By(func(value interface{}) error {
-			if ptr, ok := value.(*string); ok && ptr != nil {
-				trimmed := strings.TrimSpace(*ptr)
+			if ptr, ok := value.(*constants.TaskStatus); ok && ptr != nil {
+				trimmed := constants.TaskStatus(strings.TrimSpace(string(*ptr)))
 				return validation.Validate(trimmed, validation.In(validTaskStatuses...).Error("status must be a valid task status"))
 			}
 			return nil
@@ -116,7 +116,7 @@ func ValidateListTasksQuery(query *dtos.ListTasksQuery) error {
 	query.Title = strings.TrimSpace(query.Title)
 
 	// 4. Validate Status if provided
-	query.Status = strings.TrimSpace(query.Status)
+	query.Status = constants.TaskStatus(strings.TrimSpace(string(query.Status)))
 	if query.Status != "" {
 		if err := validation.Validate(query.Status, validation.In(validTaskStatuses...).Error("status must be a valid task status")); err != nil {
 			return err
@@ -155,4 +155,3 @@ func ValidateAssignTaskRequest(req dtos.AssignTaskRequest) error {
 		),
 	)
 }
-

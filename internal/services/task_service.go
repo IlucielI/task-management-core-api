@@ -89,7 +89,7 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 	}
 
 	// 6. Default status to 'todo' if empty
-	status := strings.TrimSpace(req.Status)
+	status := constants.TaskStatus(strings.TrimSpace(string(req.Status)))
 	if status == "" {
 		status = constants.TaskStatusTodo
 	}
@@ -219,7 +219,7 @@ func (s *Service) ListTasks(ctx context.Context, query dtos.ListTasksQuery) (*dt
 		TeamID:     &targetTeamID,
 		CreatorID:  query.CreatorID,
 		AssigneeID: query.AssigneeID,
-		Status:     strings.TrimSpace(query.Status),
+		Status:     constants.TaskStatus(strings.TrimSpace(string(query.Status))),
 		Title:      strings.TrimSpace(query.Title),
 		OrderBy:    query.OrderBy,
 		Offset:     offset,
@@ -289,7 +289,7 @@ func (s *Service) UpdateTask(ctx context.Context, taskID uuid.UUID, req dtos.Upd
 
 	statusChanged := false
 	if req.Status != nil {
-		cleanStatus := strings.TrimSpace(*req.Status)
+		cleanStatus := constants.TaskStatus(strings.TrimSpace(string(*req.Status)))
 		if cleanStatus != "" && cleanStatus != task.Status {
 			statusChanged = true
 			task.Status = cleanStatus

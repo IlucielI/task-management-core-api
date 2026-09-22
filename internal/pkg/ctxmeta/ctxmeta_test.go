@@ -68,3 +68,31 @@ func TestAuthUser(t *testing.T) {
 		t.Fatalf("expected user %+v from nil context injection", expectedUser)
 	}
 }
+
+func TestRequestID(t *testing.T) {
+	ctx := context.Background()
+
+	// Initial empty
+	if reqID := GetRequestID(ctx); reqID != "" {
+		t.Fatalf("expected empty request_id on empty ctx, got %s", reqID)
+	}
+
+	// Nil context check
+	if reqID := GetRequestID(nil); reqID != "" {
+		t.Fatalf("expected empty request_id on nil ctx, got %s", reqID)
+	}
+
+	// Injected
+	expectedID := "c138db50-9669-42b4-82a1-12c8a149f1db"
+	ctx = WithRequestID(ctx, expectedID)
+	if reqID := GetRequestID(ctx); reqID != expectedID {
+		t.Fatalf("expected %s, got %s", expectedID, reqID)
+	}
+
+	// Nil context in WithRequestID
+	nilCtx := WithRequestID(nil, expectedID)
+	if reqID := GetRequestID(nilCtx); reqID != expectedID {
+		t.Fatalf("expected %s from nil context injection, got %s", expectedID, reqID)
+	}
+}
+

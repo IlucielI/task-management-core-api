@@ -124,6 +124,10 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
+	if reqID := w.Header().Get("X-Request-ID"); reqID == "" {
+		t.Fatal("expected X-Request-ID header in response")
+	}
+
 	var resp dtos.APIResponse[dtos.ListTeamsData]
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)

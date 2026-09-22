@@ -12,6 +12,7 @@ const (
 	clientIPKey  contextKey = "client_ip"
 	userAgentKey contextKey = "user_agent"
 	authUserKey  contextKey = "auth_user"
+	requestIDKey contextKey = "request_id"
 )
 
 // AuthUser represents authenticated user identity extracted from JWT and session.
@@ -69,3 +70,23 @@ func GetUserAgent(ctx context.Context) string {
 	}
 	return ""
 }
+
+// WithRequestID injects request_id into the context.
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, requestIDKey, requestID)
+}
+
+// GetRequestID retrieves the request_id from context.
+func GetRequestID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if reqID, ok := ctx.Value(requestIDKey).(string); ok {
+		return reqID
+	}
+	return ""
+}
+

@@ -67,7 +67,7 @@ func main() {
 	repo := repositories.New(db.DB(), rdb)
 	svc := services.New(cfg, repo, storage)
 	ctrls := controllers.New(cfg, svc)
-	router := routes.NewRouter(cfg, ctrls)
+	router := routes.NewRouter(cfg, ctrls, svc)
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,

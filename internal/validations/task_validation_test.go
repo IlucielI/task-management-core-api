@@ -260,7 +260,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 	tooLongTitle := strings.Repeat("x", 256)
 	validDesc := "Updated Description"
 	validStatus := constants.TaskStatusInProgress
-	invalidStatus := "invalid_status"
+	invalidStatus := constants.TaskStatus("invalid_status")
 	validAssignee := uuid.New()
 	nilAssignee := uuid.Nil
 
@@ -284,7 +284,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "zero version with valid title",
 			req: dtos.UpdateTaskRequest{
-				Version: &zeroVersion,
+				Version: zeroVersion,
 				Title:   &validTitle,
 			},
 			wantErr: true,
@@ -292,7 +292,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "negative version with valid title",
 			req: dtos.UpdateTaskRequest{
-				Version: &negativeVersion,
+				Version: negativeVersion,
 				Title:   &validTitle,
 			},
 			wantErr: true,
@@ -300,7 +300,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "valid - version and title only",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 				Title:   &validTitle,
 			},
 			wantErr: false,
@@ -308,7 +308,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "valid - all fields",
 			req: dtos.UpdateTaskRequest{
-				Version:     &validVersion,
+				Version:     validVersion,
 				Title:       &validTitle,
 				Description: &validDesc,
 				Status:      &validStatus,
@@ -319,7 +319,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "invalid - empty title",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 				Title:   &emptyTitle,
 			},
 			wantErr: true,
@@ -327,7 +327,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "invalid - whitespace only title",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 				Title:   &whitespaceTitle,
 			},
 			wantErr: true,
@@ -335,7 +335,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "invalid - title too long",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 				Title:   &tooLongTitle,
 			},
 			wantErr: true,
@@ -343,7 +343,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "valid - version and status only",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 				Status:  &validStatus,
 			},
 			wantErr: false,
@@ -351,7 +351,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "invalid - invalid status",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 				Status:  &invalidStatus,
 			},
 			wantErr: true,
@@ -359,7 +359,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "valid - version and assignee only",
 			req: dtos.UpdateTaskRequest{
-				Version:    &validVersion,
+				Version:    validVersion,
 				AssigneeID: &validAssignee,
 			},
 			wantErr: false,
@@ -367,7 +367,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "invalid - nil uuid assignee",
 			req: dtos.UpdateTaskRequest{
-				Version:    &validVersion,
+				Version:    validVersion,
 				AssigneeID: &nilAssignee,
 			},
 			wantErr: true,
@@ -375,7 +375,7 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 		{
 			name: "invalid - version only without update fields",
 			req: dtos.UpdateTaskRequest{
-				Version: &validVersion,
+				Version: validVersion,
 			},
 			wantErr: true,
 		},
@@ -443,4 +443,3 @@ func TestValidateAssignTaskRequest(t *testing.T) {
 		})
 	}
 }
-

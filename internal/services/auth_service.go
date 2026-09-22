@@ -54,14 +54,7 @@ func (s *Service) Register(ctx context.Context, req dtos.RegisterRequest) (*dtos
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to create user: %w", err))
 	}
 
-	return &dtos.UserResponse{
-		ID:        user.ID,
-		Name:      user.Name,
-		Email:     user.Email,
-		TeamID:    user.TeamID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-	}, nil
+	return composeUserResponse(user), nil
 }
 
 // Login authenticates a user by email and password, creates an active session in Redis via session repository, and issues dual JWT tokens.

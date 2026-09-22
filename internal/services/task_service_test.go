@@ -394,11 +394,38 @@ func TestService_GetTaskByID(t *testing.T) {
 			TeamID: teamID,
 		})
 
-		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
-			AddRow(taskID, "Task Title", "Description", "todo", creatorID, teamID, now, now)
+		assigneeID := uuid.New()
+		logID := uuid.New()
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "created_at", "updated_at"}).
+			AddRow(taskID, "Task Title", "Description", "todo", creatorID, &assigneeID, teamID, now, now)
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
 			WithArgs(taskID, 1).
 			WillReturnRows(rows)
+
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(assigneeID, "Assignee User", "assignee@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+			WithArgs(assigneeID).
+			WillReturnRows(assigneeRows)
+
+		creatorRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(creatorID, "Creator User", "creator@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+			WithArgs(creatorID).
+			WillReturnRows(creatorRows)
+
+		logRows := sqlmock.NewRows([]string{"id", "task_id", "action", "created_at"}).
+			AddRow(logID, taskID, "CREATE", now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "task_logs" WHERE "task_logs"."task_id" = $1 ORDER BY created_at desc`)).
+			WithArgs(taskID).
+			WillReturnRows(logRows)
+
+		teamRows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
+			AddRow(teamID, "Engineering", now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE "teams"."id" = $1`)).
+			WithArgs(teamID).
+			WillReturnRows(teamRows)
 
 		resp, err := svc.GetTaskByID(ctx, taskID)
 		if err != nil {
@@ -406,6 +433,18 @@ func TestService_GetTaskByID(t *testing.T) {
 		}
 		if resp == nil || resp.ID != taskID || resp.Title != "Task Title" || resp.TeamID != teamID {
 			t.Fatalf("unexpected task response: %+v", resp)
+		}
+		if resp.Creator == nil || resp.Creator.Name != "Creator User" {
+			t.Fatalf("expected creator to be mapped, got: %+v", resp.Creator)
+		}
+		if resp.Assignee == nil || resp.Assignee.Name != "Assignee User" {
+			t.Fatalf("expected assignee to be mapped, got: %+v", resp.Assignee)
+		}
+		if resp.Team == nil || resp.Team.Name != "Engineering" {
+			t.Fatalf("expected team to be mapped, got: %+v", resp.Team)
+		}
+		if len(resp.Logs) != 1 || resp.Logs[0].Action != "CREATE" {
+			t.Fatalf("expected 1 log with action CREATE, got: %+v", resp.Logs)
 		}
 	})
 
@@ -448,6 +487,22 @@ func TestService_GetTaskByID(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
 			WithArgs(taskID, 1).
 			WillReturnRows(rows)
+
+		creatorRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(creatorID, "Creator", "creator@example.com", otherTeamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+			WithArgs(creatorID).
+			WillReturnRows(creatorRows)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "task_logs" WHERE "task_logs"."task_id" = $1 ORDER BY created_at desc`)).
+			WithArgs(taskID).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "task_id"}))
+
+		teamRows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
+			AddRow(otherTeamID, "Other Team", now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE "teams"."id" = $1`)).
+			WithArgs(otherTeamID).
+			WillReturnRows(teamRows)
 
 		resp, err := svc.GetTaskByID(ctx, taskID)
 		if !errors.Is(err, constants.ErrTaskNotFound) {
@@ -859,7 +914,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mock.ExpectCommit()
 
 		req := dtos.UpdateTaskRequest{
-			Version:     &version,
+			Version:     version,
 			Title:       &newTitle,
 			Description: &newDesc,
 			Status:      &newStatus,
@@ -894,7 +949,7 @@ func TestService_UpdateTask(t *testing.T) {
 
 		// Client sends update with stale version 1
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -932,7 +987,7 @@ func TestService_UpdateTask(t *testing.T) {
 
 		status := constants.TaskStatusDone
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Status:  &status,
 		}
 
@@ -975,7 +1030,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mock.ExpectCommit()
 
 		req := dtos.UpdateTaskRequest{
-			Version:    &version,
+			Version:    version,
 			AssigneeID: &newAssigneeID,
 		}
 
@@ -1003,7 +1058,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1033,7 +1088,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnRows(taskRows)
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1052,7 +1107,7 @@ func TestService_UpdateTask(t *testing.T) {
 		svc := New(cfg, repo, nil)
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1089,7 +1144,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnRows(assigneeRows)
 
 		req := dtos.UpdateTaskRequest{
-			Version:    &version,
+			Version:    version,
 			AssigneeID: &newAssigneeID,
 		}
 
@@ -1117,7 +1172,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnError(errors.New("db find error"))
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1152,7 +1207,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mock.ExpectRollback()
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 

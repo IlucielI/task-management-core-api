@@ -39,6 +39,25 @@ func (r *Repositories) FindTaskByID(ctx context.Context, id uuid.UUID) (*models.
 	return &task, nil
 }
 
+// FindTaskDetailByID retrieves a task by its UUID with preloaded Creator, Assignee, Team, and Logs.
+func (r *Repositories) FindTaskDetailByID(ctx context.Context, id uuid.UUID) (*models.Task, error) {
+	var task models.Task
+	if err := r.db.WithContext(ctx).
+		Preload("Creator").
+		Preload("Assignee").
+		Preload("Team").
+		Preload("Logs", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at desc")
+		}).
+		First(&task, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &task, nil
+}
+
 // DeleteTaskWithLog soft-deletes a task by ID and inserts an audit log within a single database transaction.
 func (r *Repositories) DeleteTaskWithLog(ctx context.Context, id uuid.UUID, log *models.TaskLog) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -109,8 +128,9 @@ type TaskFilter struct {
 	TeamID     *uuid.UUID
 	CreatorID  *uuid.UUID
 	AssigneeID *uuid.UUID
-	Status     string
+	Status     constants.TaskStatus
 	Title      string
+	OrderBy    constants.SortOrder
 	Offset     int
 	Limit      int
 }
@@ -144,11 +164,24 @@ func (r *Repositories) FindTasks(ctx context.Context, filter TaskFilter) ([]mode
 		return nil, 0, err
 	}
 
+	var orderClause string
+	switch filter.OrderBy {
+	case constants.SortByEarliest:
+		orderClause = "created_at ASC"
+	case constants.SortByLastUpdated:
+		orderClause = "updated_at DESC"
+	case constants.SortByTitleAsc:
+		orderClause = "title ASC"
+	case constants.SortByTitleDesc:
+		orderClause = "title DESC"
+	default:
+		orderClause = "created_at DESC"
+	}
+
 	var tasks []models.Task
-	if err := query.Order("created_at DESC").Offset(filter.Offset).Limit(filter.Limit).Find(&tasks).Error; err != nil {
+	if err := query.Order(orderClause).Offset(filter.Offset).Limit(filter.Limit).Find(&tasks).Error; err != nil {
 		return nil, 0, err
 	}
 
 	return tasks, total, nil
 }
-

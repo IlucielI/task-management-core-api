@@ -7,6 +7,7 @@ import (
 
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
+	"task-management/internal/models"
 	"task-management/internal/repositories"
 )
 
@@ -46,15 +47,8 @@ func (s *Service) ListUsers(ctx context.Context, query dtos.ListUsersQuery) (*dt
 	}
 
 	items := make([]*dtos.UserResponse, len(users))
-	for i, user := range users {
-		items[i] = &dtos.UserResponse{
-			ID:        user.ID,
-			Name:      user.Name,
-			Email:     user.Email,
-			TeamID:    user.TeamID,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
-		}
+	for i := range users {
+		items[i] = composeUserResponse(&users[i])
 	}
 
 	return &dtos.ListUsersData{
@@ -66,4 +60,19 @@ func (s *Service) ListUsers(ctx context.Context, query dtos.ListUsersQuery) (*dt
 			TotalPages: totalPages,
 		},
 	}, nil
+}
+
+// composeUserResponse maps a models.User entity into a dtos.UserResponse.
+func composeUserResponse(user *models.User) *dtos.UserResponse {
+	if user == nil {
+		return nil
+	}
+	return &dtos.UserResponse{
+		ID:        user.ID,
+		Name:      user.Name,
+		Email:     user.Email,
+		TeamID:    user.TeamID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
 }

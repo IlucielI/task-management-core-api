@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 	"time"
@@ -141,6 +142,83 @@ func TestRepositories_FindTaskByID(t *testing.T) {
 	}
 }
 
+func TestRepositories_FindTaskDetailByID(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	assigneeID := uuid.New()
+	teamID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+
+	// 1. Success - Task Found with all relations
+	taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "created_at", "updated_at"}).
+		AddRow(taskID, "Detail Task", "Detail Desc", "todo", creatorID, &assigneeID, teamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(taskRows)
+
+	assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+		AddRow(assigneeID, "Assignee", "assignee@example.com", teamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+		WithArgs(assigneeID).
+		WillReturnRows(assigneeRows)
+
+	creatorRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+		AddRow(creatorID, "Creator", "creator@example.com", teamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+		WithArgs(creatorID).
+		WillReturnRows(creatorRows)
+
+	logRows := sqlmock.NewRows([]string{"id", "task_id", "action", "created_at"}).
+		AddRow(logID, taskID, "CREATE", now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "task_logs" WHERE "task_logs"."task_id" = $1 ORDER BY created_at desc`)).
+		WithArgs(taskID).
+		WillReturnRows(logRows)
+
+	teamRows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
+		AddRow(teamID, "Core Team", now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE "teams"."id" = $1`)).
+		WithArgs(teamID).
+		WillReturnRows(teamRows)
+
+	got, err := repo.FindTaskDetailByID(context.Background(), taskID)
+	if err != nil {
+		t.Fatalf("unexpected error finding task detail: %v", err)
+	}
+	if got == nil || got.ID != taskID || got.Creator == nil || got.Assignee == nil || got.Team == nil || len(got.Logs) != 1 {
+		t.Fatalf("unexpected task detail result: %+v", got)
+	}
+
+	// 2. Not Found
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
+
+	got, err = repo.FindTaskDetailByID(context.Background(), taskID)
+	if err != nil {
+		t.Fatalf("expected nil error on not found, got: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil task on not found, got: %+v", got)
+	}
+
+	// 3. Database Error
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnError(errors.New("db error"))
+
+	got, err = repo.FindTaskDetailByID(context.Background(), taskID)
+	if err == nil {
+		t.Fatal("expected error on db failure, got nil")
+	}
+	if got != nil {
+		t.Fatalf("expected nil task on db error, got: %+v", got)
+	}
+}
+
 func TestRepositories_DeleteTaskWithLog(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := New(gormDB)
@@ -271,6 +349,44 @@ func TestRepositories_FindTasks(t *testing.T) {
 		}
 		if total != 15 || len(tasks) != 1 {
 			t.Fatalf("expected total=15 len=1, got total=%d len=%d", total, len(tasks))
+		}
+	})
+
+	t.Run("success_with_custom_order_by", func(t *testing.T) {
+		testCases := []struct {
+			orderBy     constants.SortOrder
+			expectedSQL string
+		}{
+			{constants.SortByEarliest, `ORDER BY created_at ASC`},
+			{constants.SortByLastUpdated, `ORDER BY updated_at DESC`},
+			{constants.SortByTitleAsc, `ORDER BY title ASC`},
+			{constants.SortByTitleDesc, `ORDER BY title DESC`},
+		}
+
+		for _, tc := range testCases {
+			filter := TaskFilter{
+				TeamID:  &teamID,
+				OrderBy: tc.orderBy,
+				Limit:   5,
+			}
+
+			mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+				WithArgs(teamID).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+			rows := sqlmock.NewRows([]string{"id", "title", "status", "team_id", "created_at", "updated_at"}).
+				AddRow(task1ID, "Task Ordered", "todo", teamID, now, now)
+			mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(`SELECT * FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL %s LIMIT $2`, tc.expectedSQL))).
+				WithArgs(teamID, 5).
+				WillReturnRows(rows)
+
+			tasks, total, err := repo.FindTasks(context.Background(), filter)
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", tc.orderBy, err)
+			}
+			if total != 1 || len(tasks) != 1 {
+				t.Fatalf("expected 1 task, got %d", len(tasks))
+			}
 		}
 	})
 
@@ -420,15 +536,15 @@ func TestRepositories_AssignTaskWithLog(t *testing.T) {
 	nextVersion := 2
 
 	task := &models.Task{
-		ID:          taskID,
-		Title:       "Assignment Task",
-		Status:      "todo",
-		CreatorID:   creatorID,
-		AssigneeID:  &assigneeID,
-		TeamID:      teamID,
-		Version:     nextVersion,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:         taskID,
+		Title:      "Assignment Task",
+		Status:     "todo",
+		CreatorID:  creatorID,
+		AssigneeID: &assigneeID,
+		TeamID:     teamID,
+		Version:    nextVersion,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 
 	log := &models.TaskLog{
@@ -486,5 +602,3 @@ func TestRepositories_AssignTaskWithLog(t *testing.T) {
 		t.Fatal("expected error on log create failure, got nil")
 	}
 }
-
-

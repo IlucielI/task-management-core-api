@@ -41,18 +41,15 @@ func ValidateCreateTaskRequest(req dtos.CreateTaskRequest) error {
 
 // ValidateUpdateTaskRequest validates the task update payload.
 func ValidateUpdateTaskRequest(req dtos.UpdateTaskRequest) error {
-	if req.Version == nil {
-		return validation.NewError("validation_required", "version is required")
-	}
-	if *req.Version < 1 {
-		return validation.NewError("validation_invalid", "version must be at least 1")
-	}
-
 	if req.Title == nil && req.Description == nil && req.Status == nil && req.AssigneeID == nil {
 		return validation.NewError("validation_invalid", "at least one field must be provided for update")
 	}
 
 	return validation.ValidateStruct(&req,
+		validation.Field(&req.Version,
+			validation.Required.Error("version is required"),
+			validation.Min(1).Error("version must be greater than or equal to 1"),
+		),
 		validation.Field(&req.Title, validation.By(func(value interface{}) error {
 			if ptr, ok := value.(*string); ok && ptr != nil {
 				trimmed := strings.TrimSpace(*ptr)
@@ -66,8 +63,8 @@ func ValidateUpdateTaskRequest(req dtos.UpdateTaskRequest) error {
 			return nil
 		})),
 		validation.Field(&req.Status, validation.By(func(value interface{}) error {
-			if ptr, ok := value.(*string); ok && ptr != nil {
-				trimmed := strings.TrimSpace(*ptr)
+			if ptr, ok := value.(*constants.TaskStatus); ok && ptr != nil {
+				trimmed := constants.TaskStatus(strings.TrimSpace(string(*ptr)))
 				return validation.Validate(trimmed, validation.In(validTaskStatuses...).Error("status must be a valid task status"))
 			}
 			return nil
@@ -119,7 +116,7 @@ func ValidateListTasksQuery(query *dtos.ListTasksQuery) error {
 	query.Title = strings.TrimSpace(query.Title)
 
 	// 4. Validate Status if provided
-	query.Status = strings.TrimSpace(query.Status)
+	query.Status = constants.TaskStatus(strings.TrimSpace(string(query.Status)))
 	if query.Status != "" {
 		if err := validation.Validate(query.Status, validation.In(validTaskStatuses...).Error("status must be a valid task status")); err != nil {
 			return err
@@ -158,4 +155,3 @@ func ValidateAssignTaskRequest(req dtos.AssignTaskRequest) error {
 		),
 	)
 }
-

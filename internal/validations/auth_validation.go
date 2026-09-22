@@ -22,3 +22,12 @@ func ValidateRegisterRequest(req dtos.RegisterRequest) error {
 		})),
 	)
 }
+
+// ValidateLoginRequest validates the login payload.
+func ValidateLoginRequest(req dtos.LoginRequest) error {
+	return validation.ValidateStruct(&req,
+		validation.Field(&req.Email, validation.Required.Error("email is required"), is.Email.Error("email must be a valid email address"), validation.Length(1, 255)),
+		validation.Field(&req.Password, validation.Required.Error("password is required"), validation.Length(8, 72).Error("password must be between 8 and 72 characters")),
+	)
+}
+

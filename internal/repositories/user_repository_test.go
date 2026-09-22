@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"task-management/internal/constants"
 	"task-management/internal/models"
 )
 
@@ -257,4 +259,52 @@ func TestRepositories_FindUsers(t *testing.T) {
 		}
 	})
 }
+
+func TestRepositories_FindUsers_CustomOrderBy(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	testCases := []struct {
+		orderBy     constants.SortOrder
+		expectedSQL string
+	}{
+		{constants.SortByNameDesc, `ORDER BY name DESC`},
+		{constants.SortByLatest, `ORDER BY created_at DESC`},
+		{constants.SortByEarliest, `ORDER BY created_at ASC`},
+		{constants.SortByEmailAsc, `ORDER BY email ASC`},
+		{constants.SortByEmailDesc, `ORDER BY email DESC`},
+		{constants.SortByNameAsc, `ORDER BY name ASC`},
+	}
+
+	for _, tc := range testCases {
+		filter := UserFilter{
+			OrderBy: tc.orderBy,
+			Offset:  0,
+			Limit:   5,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "users"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		rows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(userID, "John Doe", "john@example.com", teamID, now, now)
+
+		mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(`SELECT * FROM "users" %s LIMIT $1`, tc.expectedSQL))).
+			WithArgs(5).
+			WillReturnRows(rows)
+
+		users, total, err := repo.FindUsers(context.Background(), filter)
+		if err != nil {
+			t.Fatalf("unexpected error for %s: %v", tc.orderBy, err)
+		}
+		if total != 1 || len(users) != 1 {
+			t.Fatalf("expected 1 user, got %d (total: %d)", len(users), total)
+		}
+	}
+}
+
 

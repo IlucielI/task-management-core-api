@@ -1,14 +1,19 @@
 package dtos
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+
+	"task-management/internal/constants"
+)
 
 // ListUsersQuery represents URL query parameters for user listing, filtering, and pagination.
 type ListUsersQuery struct {
-	Page   int        `form:"page"`
-	Limit  int        `form:"limit"`
-	Name   string     `form:"name"`
-	Email  string     `form:"email"`
-	TeamID *uuid.UUID `form:"team_id"`
+	Page    int                 `form:"page"`
+	Limit   int                 `form:"limit"`
+	Name    string              `form:"name"`
+	Email   string              `form:"email"`
+	TeamID  *uuid.UUID          `form:"team_id"`
+	OrderBy constants.SortOrder `form:"order_by"`
 }
 
 // ListUsersData represents the paginated user list payload containing items and metadata.

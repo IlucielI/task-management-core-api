@@ -12,4 +12,7 @@ const (
 	SortByTitleDesc   SortOrder = "title-desc"
 	SortByNameAsc     SortOrder = "name-asc"
 	SortByNameDesc    SortOrder = "name-desc"
+	SortByEmailAsc    SortOrder = "email-asc"
+	SortByEmailDesc   SortOrder = "email-desc"
 )
+

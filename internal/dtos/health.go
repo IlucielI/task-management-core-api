@@ -3,6 +3,7 @@ package dtos
 // HealthServices represents the operational status of sub-services.
 type HealthServices struct {
 	Database string `json:"database"`
+	Redis    string `json:"redis"`
 }
 
 // HealthData contains runtime health check details.

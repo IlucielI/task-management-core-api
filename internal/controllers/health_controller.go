@@ -24,6 +24,17 @@ func (c *Controllers) HealthCheck(ctx *gin.Context) {
 		}
 	}
 
+	redisStatus := constants.IntegrationStatusConnected
+	if c.rdb == nil {
+		redisStatus = constants.IntegrationStatusDisconnected
+	} else {
+		pingCtx, cancel := context.WithTimeout(ctx.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := c.rdb.Ping(pingCtx); err != nil {
+			redisStatus = constants.IntegrationStatusDisconnected
+		}
+	}
+
 	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.HealthData]{
 		Success: true,
 		Code:    constants.ResponseCodeSuccess,
@@ -34,6 +45,7 @@ func (c *Controllers) HealthCheck(ctx *gin.Context) {
 			Uptime:   time.Since(c.startedAt).String(),
 			Services: dtos.HealthServices{
 				Database: dbStatus,
+				Redis:    redisStatus,
 			},
 		},
 	})

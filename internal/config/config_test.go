@@ -37,6 +37,21 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.DBPoolMaxConnIdleTime != 10*time.Minute && cfg.DBPoolMaxConnIdleTime <= 0 {
 		t.Errorf("expected valid DBPoolMaxConnIdleTime, got %v", cfg.DBPoolMaxConnIdleTime)
 	}
+	if cfg.RedisHost != "localhost" {
+		t.Errorf("expected RedisHost 'localhost', got %q", cfg.RedisHost)
+	}
+	if cfg.RedisPort != "6379" {
+		t.Errorf("expected RedisPort '6379', got %q", cfg.RedisPort)
+	}
+	if cfg.RedisDB != 0 {
+		t.Errorf("expected RedisDB 0, got %d", cfg.RedisDB)
+	}
+	if cfg.RedisPoolSize != 10 {
+		t.Errorf("expected RedisPoolSize 10, got %d", cfg.RedisPoolSize)
+	}
+	if cfg.RedisDialTimeout != 5*time.Second {
+		t.Errorf("expected RedisDialTimeout 5s, got %v", cfg.RedisDialTimeout)
+	}
 }
 
 func TestConfig_CustomEnv(t *testing.T) {
@@ -110,5 +125,57 @@ func TestConfig_LoadPostgresEnv(t *testing.T) {
 	}
 	if cfg.DBSSLMode != "require" {
 		t.Errorf("expected DBSSLMode 'require', got %q", cfg.DBSSLMode)
+	}
+}
+
+func TestConfig_LoadRedisEnv(t *testing.T) {
+	t.Setenv("REDIS_HOST", "custom-redis-host")
+	t.Setenv("REDIS_PORT", "6380")
+	t.Setenv("REDIS_PASSWORD", "secret-pass")
+	t.Setenv("REDIS_DB", "2")
+	t.Setenv("REDIS_POOL_SIZE", "50")
+	t.Setenv("REDIS_DIAL_TIMEOUT", "10s")
+	t.Setenv("REDIS_READ_TIMEOUT", "2s")
+	t.Setenv("REDIS_WRITE_TIMEOUT", "4s")
+
+	cfg := config.Load()
+
+	if cfg.RedisHost != "custom-redis-host" {
+		t.Errorf("expected RedisHost 'custom-redis-host', got %q", cfg.RedisHost)
+	}
+	if cfg.RedisPort != "6380" {
+		t.Errorf("expected RedisPort '6380', got %q", cfg.RedisPort)
+	}
+	if cfg.RedisPassword != "secret-pass" {
+		t.Errorf("expected RedisPassword 'secret-pass', got %q", cfg.RedisPassword)
+	}
+	if cfg.RedisDB != 2 {
+		t.Errorf("expected RedisDB 2, got %d", cfg.RedisDB)
+	}
+	if cfg.RedisPoolSize != 50 {
+		t.Errorf("expected RedisPoolSize 50, got %d", cfg.RedisPoolSize)
+	}
+	if cfg.RedisDialTimeout != 10*time.Second {
+		t.Errorf("expected RedisDialTimeout 10s, got %v", cfg.RedisDialTimeout)
+	}
+	if cfg.RedisReadTimeout != 2*time.Second {
+		t.Errorf("expected RedisReadTimeout 2s, got %v", cfg.RedisReadTimeout)
+	}
+	if cfg.RedisWriteTimeout != 4*time.Second {
+		t.Errorf("expected RedisWriteTimeout 4s, got %v", cfg.RedisWriteTimeout)
+	}
+}
+
+func TestConfig_RedisAddr(t *testing.T) {
+	cfg := config.Config{
+		RedisHost: "10.0.0.1",
+		RedisPort: "6379",
+	}
+
+	expected := "10.0.0.1:6379"
+	got := cfg.RedisAddr()
+
+	if got != expected {
+		t.Errorf("expected RedisAddr %q, got %q", expected, got)
 	}
 }

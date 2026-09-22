@@ -25,6 +25,16 @@ type Config struct {
 	DBPoolMaxIdleConn      int
 	DBPoolMaxConnLifetime  time.Duration
 	DBPoolMaxConnIdleTime  time.Duration
+
+	// Redis Configuration
+	RedisHost         string
+	RedisPort         string
+	RedisPassword     string
+	RedisDB           int
+	RedisPoolSize     int
+	RedisDialTimeout  time.Duration
+	RedisReadTimeout  time.Duration
+	RedisWriteTimeout time.Duration
 }
 
 func Load() Config {
@@ -46,6 +56,16 @@ func Load() Config {
 		DBPoolMaxIdleConn:      getEnvInt("DB_POOL_MAX_IDLE_CONN", 10),
 		DBPoolMaxConnLifetime:  getEnvDuration("DB_POOL_MAX_CONN_LIFETIME", 30*time.Minute),
 		DBPoolMaxConnIdleTime:  getEnvDuration("DB_POOL_MAX_CONN_IDLE_TIME", 10*time.Minute),
+
+		// Redis settings
+		RedisHost:         getEnv("REDIS_HOST", "localhost"),
+		RedisPort:         getEnv("REDIS_PORT", "6379"),
+		RedisPassword:     getEnv("REDIS_PASSWORD", ""),
+		RedisDB:           getEnvInt("REDIS_DB", 0),
+		RedisPoolSize:     getEnvInt("REDIS_POOL_SIZE", 10),
+		RedisDialTimeout:  getEnvDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
+		RedisReadTimeout:  getEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
+		RedisWriteTimeout: getEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
 	}
 }
 
@@ -54,6 +74,11 @@ func (c Config) DSN() string {
 	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		c.DBHost, c.DBPort, c.DBUser, c.DBPass, c.DBName, c.DBSSLMode,
 	)
+}
+
+// RedisAddr returns the formatted host:port address for Redis.
+func (c Config) RedisAddr() string {
+	return fmt.Sprintf("%s:%s", c.RedisHost, c.RedisPort)
 }
 
 func getEnv(key string, fallback string) string {

@@ -11,26 +11,26 @@ import (
 	"task-management/internal/validations"
 )
 
-// GetTeams handles the HTTP request to fetch all teams with optional query filter.
+// GetTeams handles the HTTP request to fetch all teams with optional query filter, sorting, and pagination.
 func (c *Controllers) GetTeams(ctx *gin.Context) {
-	var filter dtos.TeamFilterQuery
-	if err := ctx.ShouldBindQuery(&filter); err != nil {
+	var query dtos.ListTeamsQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
-	if err := validations.ValidateTeamFilter(filter); err != nil {
+	if err := validations.ValidateListTeamsQuery(&query); err != nil {
 		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
-	teams, err := c.svc.GetTeams(ctx.Request.Context(), filter)
+	teams, err := c.svc.GetTeams(ctx.Request.Context(), query)
 	if err != nil {
 		c.wrapError(ctx, err)
 		return
 	}
 
-	ctx.JSON(http.StatusOK, dtos.APIResponse[[]dtos.TeamResponse]{
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ListTeamsData]{
 		Success:   true,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Teams retrieved successfully",
@@ -38,4 +38,3 @@ func (c *Controllers) GetTeams(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
-

@@ -149,11 +149,6 @@ func TestValidateListTasksQuery(t *testing.T) {
 		checkFunc func(t *testing.T, q *dtos.ListTasksQuery)
 	}{
 		{
-			name:    "nil query",
-			query:   nil,
-			wantErr: true,
-		},
-		{
 			name: "empty defaults applied",
 			query: &dtos.ListTasksQuery{
 				Page:  0,

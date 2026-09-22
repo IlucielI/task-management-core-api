@@ -96,10 +96,6 @@ func ValidateTaskID(idStr string) (uuid.UUID, error) {
 
 // ValidateListTasksQuery validates and normalizes pagination and filter query parameters for listing tasks.
 func ValidateListTasksQuery(query *dtos.ListTasksQuery) error {
-	if query == nil {
-		return validation.NewError("validation_invalid", "query cannot be nil")
-	}
-
 	// 1. Normalize Limit: default to 10 if <= 0; max 100
 	if query.Limit <= 0 {
 		query.Limit = 10

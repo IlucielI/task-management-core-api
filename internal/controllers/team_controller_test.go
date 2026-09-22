@@ -49,16 +49,20 @@ func TestControllers_GetTeams_Success(t *testing.T) {
 	teamID := uuid.New()
 	now := time.Now()
 
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "teams" WHERE LOWER(name) LIKE LOWER($1)`)).
+		WithArgs("%Engineering%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
 	rows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
 		AddRow(teamID, "Engineering", now, now)
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE $1 ORDER BY name ASC`)).
-		WithArgs("%engineering%").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE LOWER($1) ORDER BY name ASC LIMIT $2`)).
+		WithArgs("%Engineering%", 10).
 		WillReturnRows(rows)
 
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/teams?name=Engineering", nil)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/teams?name=Engineering&page=1&limit=10", nil)
 
 	ctrls.GetTeams(ctx)
 
@@ -66,15 +70,18 @@ func TestControllers_GetTeams_Success(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	var resp dtos.APIResponse[[]dtos.TeamResponse]
+	var resp dtos.APIResponse[dtos.ListTeamsData]
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success response, got: %+v", resp)
 	}
-	if len(resp.Data) != 1 || resp.Data[0].Name != "Engineering" {
-		t.Fatalf("unexpected data: %+v", resp.Data)
+	if len(resp.Data.Items) != 1 || resp.Data.Items[0].Name != "Engineering" {
+		t.Fatalf("unexpected items: %+v", resp.Data.Items)
+	}
+	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Page != 1 || resp.Data.Metadata.Limit != 10 {
+		t.Fatalf("unexpected metadata: %+v", resp.Data.Metadata)
 	}
 }
 
@@ -86,8 +93,8 @@ func TestControllers_GetTeams_RepositoryError(t *testing.T) {
 	svc := services.New(config.Config{}, repo, nil)
 	ctrls := New(config.Config{}, svc)
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE $1 ORDER BY name ASC`)).
-		WithArgs("%engineering%").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "teams" WHERE LOWER(name) LIKE LOWER($1)`)).
+		WithArgs("%Engineering%").
 		WillReturnError(errors.New("db connection failure"))
 
 	w := httptest.NewRecorder()
@@ -114,27 +121,40 @@ func TestControllers_GetTeams_ValidationError(t *testing.T) {
 
 	ctrls := New(config.Config{}, nil)
 
-	// Generate string longer than 100 characters
-	longName := ""
-	for i := 0; i < 110; i++ {
-		longName += "a"
-	}
+	t.Run("name_too_long", func(t *testing.T) {
+		longName := ""
+		for i := 0; i < 110; i++ {
+			longName += "a"
+		}
 
-	w := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(w)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/teams?name="+longName, nil)
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/teams?name="+longName, nil)
 
-	ctrls.GetTeams(ctx)
+		ctrls.GetTeams(ctx)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, w.Code)
-	}
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
 
-	var resp dtos.BaseResponse
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
-		t.Fatalf("expected bad request response, got: %+v", resp)
-	}
+		var resp dtos.BaseResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+			t.Fatalf("expected bad request response, got: %+v", resp)
+		}
+	})
+
+	t.Run("invalid_order_by", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/teams?order_by=invalid_sort", nil)
+
+		ctrls.GetTeams(ctx)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+		}
+	})
 }

@@ -10,4 +10,6 @@ const (
 	SortByLastUpdated SortOrder = "lastUpdated"
 	SortByTitleAsc    SortOrder = "title-asc"
 	SortByTitleDesc   SortOrder = "title-desc"
+	SortByNameAsc     SortOrder = "name-asc"
+	SortByNameDesc    SortOrder = "name-desc"
 )

@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -17,64 +16,24 @@ import (
 func (c *Controllers) CreateTask(ctx *gin.Context) {
 	idempotencyKey := ctx.GetHeader("Idempotency-Key")
 	if strings.TrimSpace(idempotencyKey) == "" {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success:   false,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   constants.ErrInvalidIdempotencyKey.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrInvalidIdempotencyKey)
 		return
 	}
 
 	var req dtos.CreateTaskRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success:   false,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	if err := validations.ValidateCreateTaskRequest(req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success:   false,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	task, err := c.svc.CreateTask(ctx.Request.Context(), req, idempotencyKey)
 	if err != nil {
-		now := time.Now()
-		if errors.Is(err, constants.ErrInvalidIdempotencyKey) || errors.Is(err, constants.ErrAssigneeNotInTeam) {
-			ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-				Success:   false,
-				Code:      constants.ResponseCodeBadRequest,
-				Message:   err.Error(),
-				Timestamp: now,
-			})
-			return
-		}
-		if errors.Is(err, constants.ErrUnauthorized) {
-			ctx.JSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success:   false,
-				Code:      constants.ResponseCodeUnauthorized,
-				Message:   err.Error(),
-				Timestamp: now,
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Success:   false,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   "Failed to create task",
-			Timestamp: now,
-		})
+		c.wrapError(ctx, err)
 		return
 	}
 
@@ -91,43 +50,13 @@ func (c *Controllers) CreateTask(ctx *gin.Context) {
 func (c *Controllers) GetTaskByID(ctx *gin.Context) {
 	taskID, err := validations.ValidateTaskID(ctx.Param("id"))
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success:   false,
-			Code:      constants.ResponseCodeBadRequest,
-			Message:   err.Error(),
-			Timestamp: time.Now(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	task, err := c.svc.GetTaskByID(ctx.Request.Context(), taskID)
 	if err != nil {
-		now := time.Now()
-		if errors.Is(err, constants.ErrTaskNotFound) {
-			ctx.JSON(http.StatusNotFound, dtos.BaseResponse{
-				Success:   false,
-				Code:      constants.ResponseCodeNotFound,
-				Message:   err.Error(),
-				Timestamp: now,
-			})
-			return
-		}
-		if errors.Is(err, constants.ErrUnauthorized) {
-			ctx.JSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success:   false,
-				Code:      constants.ResponseCodeUnauthorized,
-				Message:   err.Error(),
-				Timestamp: now,
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Success:   false,
-			Code:      constants.ResponseCodeInternalError,
-			Message:   "Failed to retrieve task",
-			Timestamp: now,
-		})
+		c.wrapError(ctx, err)
 		return
 	}
 
@@ -139,4 +68,5 @@ func (c *Controllers) GetTaskByID(ctx *gin.Context) {
 		Timestamp: time.Now(),
 	})
 }
+
 

@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -14,37 +15,27 @@ import (
 func (c *Controllers) GetTeams(ctx *gin.Context) {
 	var filter dtos.TeamFilterQuery
 	if err := ctx.ShouldBindQuery(&filter); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeBadRequest,
-			Message: err.Error(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	if err := validations.ValidateTeamFilter(filter); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeBadRequest,
-			Message: err.Error(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	teams, err := c.svc.GetTeams(ctx.Request.Context(), filter)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeInternalError,
-			Message: "Failed to retrieve teams",
-		})
+		c.wrapError(ctx, err)
 		return
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[[]dtos.TeamResponse]{
-		Success: true,
-		Code:    constants.ResponseCodeSuccess,
-		Message: "Teams retrieved successfully",
-		Data:    teams,
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Teams retrieved successfully",
+		Data:      teams,
+		Timestamp: time.Now(),
 	})
 }
+

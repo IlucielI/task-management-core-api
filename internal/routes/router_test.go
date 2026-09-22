@@ -4,14 +4,39 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/google/uuid"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	"task-management/internal/config"
 	"task-management/internal/constants"
 	"task-management/internal/controllers"
 	"task-management/internal/dtos"
+	"task-management/internal/repositories"
 	"task-management/internal/routes"
+	"task-management/internal/services"
 )
+
+func setupMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to open sqlmock: %v", err)
+	}
+
+	gormDB, err := gorm.Open(postgres.New(postgres.Config{
+		Conn: db,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to initialize gorm with sqlmock: %v", err)
+	}
+
+	return gormDB, mock
+}
 
 func TestRouter_HealthCheck(t *testing.T) {
 	cfg := config.Load()
@@ -61,5 +86,52 @@ func TestRouter_HealthCheck(t *testing.T) {
 	}
 	if resp.Data.Services.S3 != constants.IntegrationStatusDisconnected {
 		t.Errorf("expected s3 status %q when storage is nil, got %q", constants.IntegrationStatusDisconnected, resp.Data.Services.S3)
+	}
+}
+
+func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
+	cfg := config.Load()
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(cfg, nil, nil, nil)
+	svc.SetRepositories(repo)
+
+	ctrls := controllers.New(cfg, nil, nil, nil)
+	ctrls.SetService(svc)
+
+	router := routes.NewRouter(cfg, ctrls)
+
+	teamID := uuid.New()
+	now := time.Now()
+
+	rows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
+		AddRow(teamID, "Engineering", now, now)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE $1 ORDER BY name ASC`)).
+		WithArgs("%engineering%").
+		WillReturnRows(rows)
+
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest(http.MethodGet, "/v1/teams?name=Engineering", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var resp dtos.APIResponse[[]dtos.TeamResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+		t.Fatalf("expected success envelope response, got: %+v", resp)
+	}
+	if len(resp.Data) != 1 || resp.Data[0].Name != "Engineering" {
+		t.Fatalf("unexpected data: %+v", resp.Data)
 	}
 }

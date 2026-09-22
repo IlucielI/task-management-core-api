@@ -150,4 +150,40 @@ func TestService_ListUsers(t *testing.T) {
 			t.Fatalf("expected nil response, got %+v", resp)
 		}
 	})
+
+	t.Run("success_with_custom_order_by", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: callerID,
+			TeamID: teamID,
+		})
+
+		query := dtos.ListUsersQuery{
+			Page:    1,
+			Limit:   10,
+			OrderBy: constants.SortByNameDesc,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "users" WHERE team_id = $1`)).
+			WithArgs(teamID).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		rows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(user1ID, "Alice", "alice@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE team_id = $1 ORDER BY name DESC LIMIT $2`)).
+			WithArgs(teamID, 10).
+			WillReturnRows(rows)
+
+		resp, err := svc.ListUsers(ctx, query)
+		if err != nil {
+			t.Fatalf("unexpected error listing users: %v", err)
+		}
+		if resp == nil || len(resp.Items) != 1 {
+			t.Fatalf("expected 1 item, got %+v", resp)
+		}
+	})
 }
+

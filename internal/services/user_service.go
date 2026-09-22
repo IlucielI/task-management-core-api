@@ -29,11 +29,12 @@ func (s *Service) ListUsers(ctx context.Context, query dtos.ListUsersQuery) (*dt
 	targetTeamID := authUser.TeamID
 
 	filter := repositories.UserFilter{
-		TeamID: &targetTeamID,
-		Name:   strings.TrimSpace(query.Name),
-		Email:  strings.TrimSpace(query.Email),
-		Offset: offset,
-		Limit:  query.Limit,
+		TeamID:  &targetTeamID,
+		Name:    strings.TrimSpace(query.Name),
+		Email:   strings.TrimSpace(query.Email),
+		OrderBy: query.OrderBy,
+		Offset:  offset,
+		Limit:   query.Limit,
 	}
 
 	users, total, err := s.repo.FindUsers(ctx, filter)

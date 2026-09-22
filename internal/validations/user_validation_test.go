@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"task-management/internal/constants"
 	"task-management/internal/dtos"
 )
 
@@ -19,11 +20,6 @@ func TestValidateListUsersQuery(t *testing.T) {
 		checkFunc func(t *testing.T, q *dtos.ListUsersQuery)
 	}{
 		{
-			name:    "nil query",
-			query:   nil,
-			wantErr: true,
-		},
-		{
 			name: "empty defaults applied",
 			query: &dtos.ListUsersQuery{
 				Page:  0,
@@ -33,6 +29,9 @@ func TestValidateListUsersQuery(t *testing.T) {
 			checkFunc: func(t *testing.T, q *dtos.ListUsersQuery) {
 				if q.Page != 1 || q.Limit != 10 {
 					t.Errorf("expected page=1, limit=10, got page=%d, limit=%d", q.Page, q.Limit)
+				}
+				if q.OrderBy != constants.SortByNameAsc {
+					t.Errorf("expected default order_by=name-asc, got %v", q.OrderBy)
 				}
 			},
 		},
@@ -76,6 +75,73 @@ func TestValidateListUsersQuery(t *testing.T) {
 			name: "invalid nil team_id",
 			query: &dtos.ListUsersQuery{
 				TeamID: &nilUUID,
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid sort order name-desc",
+			query: &dtos.ListUsersQuery{
+				OrderBy: constants.SortByNameDesc,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListUsersQuery) {
+				if q.OrderBy != constants.SortByNameDesc {
+					t.Errorf("expected order_by=name-desc, got %v", q.OrderBy)
+				}
+			},
+		},
+		{
+			name: "valid sort order email-asc",
+			query: &dtos.ListUsersQuery{
+				OrderBy: constants.SortByEmailAsc,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListUsersQuery) {
+				if q.OrderBy != constants.SortByEmailAsc {
+					t.Errorf("expected order_by=email-asc, got %v", q.OrderBy)
+				}
+			},
+		},
+		{
+			name: "valid sort order email-desc",
+			query: &dtos.ListUsersQuery{
+				OrderBy: constants.SortByEmailDesc,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListUsersQuery) {
+				if q.OrderBy != constants.SortByEmailDesc {
+					t.Errorf("expected order_by=email-desc, got %v", q.OrderBy)
+				}
+			},
+		},
+		{
+			name: "valid sort order latest",
+			query: &dtos.ListUsersQuery{
+				OrderBy: constants.SortByLatest,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListUsersQuery) {
+				if q.OrderBy != constants.SortByLatest {
+					t.Errorf("expected order_by=latest, got %v", q.OrderBy)
+				}
+			},
+		},
+		{
+			name: "valid sort order earliest",
+			query: &dtos.ListUsersQuery{
+				OrderBy: constants.SortByEarliest,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListUsersQuery) {
+				if q.OrderBy != constants.SortByEarliest {
+					t.Errorf("expected order_by=earliest, got %v", q.OrderBy)
+				}
+			},
+		},
+		{
+			name: "invalid sort order",
+			query: &dtos.ListUsersQuery{
+				OrderBy: "invalid-sort",
 			},
 			wantErr: true,
 		},

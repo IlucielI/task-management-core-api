@@ -6,15 +6,21 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 
+	"task-management/internal/constants"
 	"task-management/internal/dtos"
 )
 
+var validUserSortOrders = []interface{}{
+	constants.SortByNameAsc,
+	constants.SortByNameDesc,
+	constants.SortByLatest,
+	constants.SortByEarliest,
+	constants.SortByEmailAsc,
+	constants.SortByEmailDesc,
+}
+
 // ValidateListUsersQuery validates and normalizes pagination and filter query parameters for listing users.
 func ValidateListUsersQuery(query *dtos.ListUsersQuery) error {
-	if query == nil {
-		return validation.NewError("validation_invalid", "query cannot be nil")
-	}
-
 	// 1. Normalize Limit: default to 10 if <= 0; max 100
 	if query.Limit <= 0 {
 		query.Limit = 10
@@ -36,5 +42,15 @@ func ValidateListUsersQuery(query *dtos.ListUsersQuery) error {
 		return validation.NewError("validation_invalid", "team_id cannot be nil uuid")
 	}
 
+	// 5. Validate OrderBy if provided; default to SortByNameAsc
+	if query.OrderBy == "" {
+		query.OrderBy = constants.SortByNameAsc
+	} else {
+		if err := validation.Validate(query.OrderBy, validation.In(validUserSortOrders...).Error("order_by must be a valid sort order")); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
+

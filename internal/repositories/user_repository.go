@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"task-management/internal/constants"
 	"task-management/internal/models"
 )
 
@@ -45,11 +46,12 @@ func (r *Repositories) FindUserByID(ctx context.Context, id uuid.UUID) (*models.
 
 // UserFilter represents search, filter, and pagination criteria for users.
 type UserFilter struct {
-	TeamID *uuid.UUID
-	Name   string
-	Email  string
-	Offset int
-	Limit  int
+	TeamID  *uuid.UUID
+	Name    string
+	Email   string
+	OrderBy constants.SortOrder
+	Offset  int
+	Limit   int
 }
 
 // FindUsers retrieves a paginated slice of users and total count matching filter criteria.
@@ -73,8 +75,24 @@ func (r *Repositories) FindUsers(ctx context.Context, filter UserFilter) ([]mode
 		return nil, 0, err
 	}
 
+	var orderClause string
+	switch filter.OrderBy {
+	case constants.SortByNameDesc:
+		orderClause = "name DESC"
+	case constants.SortByLatest:
+		orderClause = "created_at DESC"
+	case constants.SortByEarliest:
+		orderClause = "created_at ASC"
+	case constants.SortByEmailAsc:
+		orderClause = "email ASC"
+	case constants.SortByEmailDesc:
+		orderClause = "email DESC"
+	default:
+		orderClause = "name ASC"
+	}
+
 	var users []models.User
-	if err := query.Order("name ASC").Offset(filter.Offset).Limit(filter.Limit).Find(&users).Error; err != nil {
+	if err := query.Order(orderClause).Offset(filter.Offset).Limit(filter.Limit).Find(&users).Error; err != nil {
 		return nil, 0, err
 	}
 

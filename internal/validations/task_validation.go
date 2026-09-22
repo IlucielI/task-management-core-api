@@ -1,6 +1,8 @@
 package validations
 
 import (
+	"strings"
+
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/google/uuid"
 
@@ -36,3 +38,18 @@ func ValidateCreateTaskRequest(req dtos.CreateTaskRequest) error {
 		})),
 	)
 }
+
+// ValidateTaskID validates that the path parameter is a valid non-nil UUID and returns the parsed UUID.
+func ValidateTaskID(idStr string) (uuid.UUID, error) {
+	trimmed := strings.TrimSpace(idStr)
+	if trimmed == "" {
+		return uuid.Nil, validation.NewError("validation_invalid", "invalid task id format")
+	}
+
+	taskID, err := uuid.Parse(trimmed)
+	if err != nil || taskID == uuid.Nil {
+		return uuid.Nil, validation.NewError("validation_invalid", "invalid task id format")
+	}
+	return taskID, nil
+}
+

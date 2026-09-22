@@ -21,7 +21,7 @@ func (s *Service) Register(ctx context.Context, req dtos.RegisterRequest) (*dtos
 	// 1. Validate team exists
 	team, err := s.repo.FindTeamByID(ctx, req.TeamID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check team: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to check team: %w", err))
 	}
 	if team == nil {
 		return nil, constants.ErrTeamNotFound
@@ -30,7 +30,7 @@ func (s *Service) Register(ctx context.Context, req dtos.RegisterRequest) (*dtos
 	// 2. Validate email uniqueness
 	existingUser, err := s.repo.FindUserByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check email: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to check email: %w", err))
 	}
 	if existingUser != nil {
 		return nil, constants.ErrEmailAlreadyExists
@@ -39,7 +39,7 @@ func (s *Service) Register(ctx context.Context, req dtos.RegisterRequest) (*dtos
 	// 3. Hash password using bcrypt
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, fmt.Errorf("failed to hash password: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to generate secure hash: %w", err))
 	}
 
 	// 4. Create user record
@@ -51,7 +51,7 @@ func (s *Service) Register(ctx context.Context, req dtos.RegisterRequest) (*dtos
 	}
 
 	if err := s.repo.CreateUser(ctx, user); err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to create user: %w", err))
 	}
 
 	return &dtos.UserResponse{
@@ -69,7 +69,7 @@ func (s *Service) Login(ctx context.Context, req dtos.LoginRequest) (*dtos.Login
 	// 1. Find user by email
 	user, err := s.repo.FindUserByEmail(ctx, req.Email)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check user: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to check user: %w", err))
 	}
 	if user == nil {
 		return nil, constants.ErrInvalidCredentials
@@ -84,7 +84,7 @@ func (s *Service) Login(ctx context.Context, req dtos.LoginRequest) (*dtos.Login
 	sessionID := uuid.New().String()
 	tokenPair, err := jwt.GenerateTokenPair(s.cfg, user, sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate tokens: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to generate tokens: %w", err))
 	}
 
 	// 4. Store stateful session in Redis via repository if configured
@@ -103,7 +103,7 @@ func (s *Service) Login(ctx context.Context, req dtos.LoginRequest) (*dtos.Login
 	}
 
 	if err := s.repo.SaveSession(ctx, sessionData, s.cfg.JWTRefreshExpiration); err != nil {
-		return nil, fmt.Errorf("failed to save session: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to save session: %w", err))
 	}
 
 	return &dtos.LoginResponse{

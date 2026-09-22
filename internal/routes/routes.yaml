@@ -25,3 +25,9 @@ routes:
     path: /v1/tasks
     handler: CreateTask
     auth: true
+
+  - method: GET
+    path: /v1/tasks/:id
+    handler: GetTaskByID
+    auth: true
+

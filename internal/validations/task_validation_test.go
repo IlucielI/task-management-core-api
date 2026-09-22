@@ -77,3 +77,64 @@ func TestValidateCreateTaskRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateTaskID(t *testing.T) {
+	validID := uuid.New()
+
+	tests := []struct {
+		name    string
+		idStr   string
+		wantID  uuid.UUID
+		wantErr bool
+	}{
+		{
+			name:    "valid uuid",
+			idStr:   validID.String(),
+			wantID:  validID,
+			wantErr: false,
+		},
+		{
+			name:    "valid uuid with spaces",
+			idStr:   "  " + validID.String() + "  ",
+			wantID:  validID,
+			wantErr: false,
+		},
+		{
+			name:    "empty string",
+			idStr:   "",
+			wantID:  uuid.Nil,
+			wantErr: true,
+		},
+		{
+			name:    "whitespace only",
+			idStr:   "   ",
+			wantID:  uuid.Nil,
+			wantErr: true,
+		},
+		{
+			name:    "malformed uuid",
+			idStr:   "not-a-uuid",
+			wantID:  uuid.Nil,
+			wantErr: true,
+		},
+		{
+			name:    "nil uuid",
+			idStr:   uuid.Nil.String(),
+			wantID:  uuid.Nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ValidateTaskID(tt.idStr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateTaskID() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.wantID {
+				t.Errorf("ValidateTaskID() got = %v, want %v", got, tt.wantID)
+			}
+		})
+	}
+}
+

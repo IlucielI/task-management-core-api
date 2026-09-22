@@ -11,7 +11,7 @@ import (
 func (s *Service) GetTeams(ctx context.Context, filter dtos.TeamFilterQuery) ([]dtos.TeamResponse, error) {
 	teams, err := s.repo.FindAllTeams(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch teams: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to fetch teams: %w", err))
 	}
 
 	result := make([]dtos.TeamResponse, 0, len(teams))

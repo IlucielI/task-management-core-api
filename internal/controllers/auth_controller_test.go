@@ -12,9 +12,12 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redismock/v9"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
+	"task-management/internal/adapters/redis"
 	"task-management/internal/config"
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
@@ -27,11 +30,8 @@ func TestControllers_Register_Success(t *testing.T) {
 
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(config.Config{}, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
 
 	teamID := uuid.New()
 	userID := uuid.New()
@@ -89,7 +89,7 @@ func TestControllers_Register_Success(t *testing.T) {
 func TestControllers_Register_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
@@ -114,7 +114,7 @@ func TestControllers_Register_InvalidJSON(t *testing.T) {
 func TestControllers_Register_ValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	invalidReq := dtos.RegisterRequest{
 		Name:     "",
@@ -149,11 +149,8 @@ func TestControllers_Register_DomainErrors(t *testing.T) {
 
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(config.Config{}, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
 
 	teamID := uuid.New()
 	reqPayload := dtos.RegisterRequest{
@@ -237,3 +234,202 @@ func TestControllers_Register_DomainErrors(t *testing.T) {
 		t.Fatalf("expected status %d on internal server error, got %d", http.StatusInternalServerError, w3.Code)
 	}
 }
+
+func TestControllers_Login_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	rClient, rMock := redismock.NewClientMock()
+	rdb := redis.NewWithClient(rClient)
+	repo := repositories.New(gormDB, rdb)
+	cfg := config.Config{
+		AppName:              "task-management-test",
+		JWTSecret:            "test-jwt-secret-key",
+		JWTAccessExpiration:  24 * time.Hour,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+	svc := services.New(cfg, repo, nil)
+	ctrls := New(cfg, svc)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	rawPassword := "testPassword123"
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(rawPassword), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("failed to hash password: %v", err)
+	}
+
+	userRows := sqlmock.NewRows([]string{"id", "name", "email", "password", "team_id", "created_at", "updated_at"}).
+		AddRow(userID, "Jane Doe", "jane@example.com", string(hashedPassword), teamID, now, now)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("jane@example.com", 1).
+		WillReturnRows(userRows)
+
+	rMock.Regexp().ExpectSet(`^auth:session:.*`, `.*`, 7*24*time.Hour).SetVal("OK")
+
+	reqPayload := dtos.LoginRequest{
+		Email:    "jane@example.com",
+		Password: rawPassword,
+	}
+
+	bodyBytes, _ := json.Marshal(reqPayload)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(bodyBytes))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("User-Agent", "TestAgent")
+
+	ctrls.Login(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d. Body: %s", http.StatusOK, w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.LoginResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+		t.Fatalf("expected success response, got: %+v", resp)
+	}
+	if resp.Data == nil || resp.Data.Tokens.AccessToken == "" || resp.Data.Tokens.RefreshToken == "" {
+		t.Fatalf("expected access and refresh tokens, got: %+v", resp.Data)
+	}
+	if resp.Data.User.Email != "jane@example.com" {
+		t.Fatalf("expected email jane@example.com, got %s", resp.Data.User.Email)
+	}
+}
+
+func TestControllers_Login_InvalidJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctrls := New(config.Config{}, nil)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader([]byte("not valid json")))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Login(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+		t.Fatalf("expected bad request response, got: %+v", resp)
+	}
+}
+
+func TestControllers_Login_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctrls := New(config.Config{}, nil)
+
+	reqPayload := dtos.LoginRequest{
+		Email:    "invalid-email-format",
+		Password: "short",
+	}
+
+	bodyBytes, _ := json.Marshal(reqPayload)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(bodyBytes))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Login(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, w.Code)
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+		t.Fatalf("expected bad request response, got: %+v", resp)
+	}
+}
+
+func TestControllers_Login_InvalidCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	cfg := config.Config{
+		JWTSecret: "test-jwt-secret-key",
+	}
+	svc := services.New(cfg, repo, nil)
+	ctrls := New(cfg, svc)
+
+	// User not found in DB
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("notfound@example.com", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	reqPayload := dtos.LoginRequest{
+		Email:    "notfound@example.com",
+		Password: "testPassword123",
+	}
+
+	bodyBytes, _ := json.Marshal(reqPayload)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(bodyBytes))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Login(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d on invalid credentials, got %d", http.StatusUnauthorized, w.Code)
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Success || resp.Code != constants.ResponseCodeUnauthorized || resp.Message != constants.ErrInvalidCredentials.Error() {
+		t.Fatalf("expected unauthorized response with ErrInvalidCredentials, got: %+v", resp)
+	}
+}
+
+func TestControllers_Login_InternalError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	cfg := config.Config{}
+	svc := services.New(cfg, repo, nil)
+	ctrls := New(cfg, svc)
+
+	// Database failure
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("jane@example.com", 1).
+		WillReturnError(errors.New("db crash"))
+
+	reqPayload := dtos.LoginRequest{
+		Email:    "jane@example.com",
+		Password: "testPassword123",
+	}
+
+	bodyBytes, _ := json.Marshal(reqPayload)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(bodyBytes))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	ctrls.Login(ctx)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d on db error, got %d", http.StatusInternalServerError, w.Code)
+	}
+}
+

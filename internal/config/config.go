@@ -44,6 +44,11 @@ type Config struct {
 	S3Region         string
 	S3UseSSL         bool
 	S3ForcePathStyle bool
+
+	// JWT Configuration
+	JWTSecret            string
+	JWTAccessExpiration  time.Duration
+	JWTRefreshExpiration time.Duration
 }
 
 func Load() Config {
@@ -84,6 +89,11 @@ func Load() Config {
 		S3Region:         getEnv("S3_REGION", "us-east-1"),
 		S3UseSSL:         getEnvBool("S3_USE_SSL", false),
 		S3ForcePathStyle: getEnvBool("S3_FORCE_PATH_STYLE", true),
+
+		// JWT settings
+		JWTSecret:            getEnv("JWT_SECRET", "task-management-jwt-secret-key"),
+		JWTAccessExpiration:  getEnvDuration("JWT_ACCESS_EXPIRATION", 24*time.Hour),
+		JWTRefreshExpiration: getEnvDuration("JWT_REFRESH_EXPIRATION", 7*24*time.Hour),
 	}
 }
 

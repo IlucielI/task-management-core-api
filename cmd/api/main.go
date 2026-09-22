@@ -13,7 +13,9 @@ import (
 	"task-management/internal/adapters/s3"
 	"task-management/internal/config"
 	"task-management/internal/controllers"
+	"task-management/internal/repositories"
 	"task-management/internal/routes"
+	"task-management/internal/services"
 )
 
 func main() {
@@ -62,7 +64,9 @@ func main() {
 		log.Println("s3 adapter connected successfully")
 	}
 
-	ctrls := controllers.New(cfg, db, rdb, storage)
+	repo := repositories.New(db.DB(), rdb)
+	svc := services.New(cfg, repo, storage)
+	ctrls := controllers.New(cfg, svc)
 	router := routes.NewRouter(cfg, ctrls)
 
 	httpServer := &http.Server{

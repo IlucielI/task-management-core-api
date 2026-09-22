@@ -8,20 +8,24 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-redis/redismock/v9"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"task-management/internal/adapters/redis"
 	"task-management/internal/config"
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
+	"task-management/internal/pkg/ctxmeta"
 	"task-management/internal/repositories"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestService_Register_Success(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	userID := uuid.New()
@@ -74,8 +78,7 @@ func TestService_Register_Success(t *testing.T) {
 func TestService_Register_TeamNotFound(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	req := dtos.RegisterRequest{
@@ -102,8 +105,7 @@ func TestService_Register_TeamNotFound(t *testing.T) {
 func TestService_Register_EmailAlreadyExists(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	existingUserID := uuid.New()
@@ -142,8 +144,7 @@ func TestService_Register_EmailAlreadyExists(t *testing.T) {
 func TestService_Register_DatabaseErrors(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	now := time.Now()
@@ -197,3 +198,151 @@ func TestService_Register_DatabaseErrors(t *testing.T) {
 		t.Fatal("expected error on insert db failure, got nil")
 	}
 }
+
+func TestService_Login_Success(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	rClient, rMock := redismock.NewClientMock()
+	rdb := redis.NewWithClient(rClient)
+	repo := repositories.New(gormDB, rdb)
+	cfg := config.Config{
+		AppName:              "task-management-test",
+		JWTSecret:            "test-jwt-secret-key",
+		JWTAccessExpiration:  24 * time.Hour,
+		JWTRefreshExpiration: 7 * 24 * time.Hour,
+	}
+	svc := New(cfg, repo, nil)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	rawPassword := "testPassword123"
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(rawPassword), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("failed to hash test password: %v", err)
+	}
+
+	userRows := sqlmock.NewRows([]string{"id", "name", "email", "password", "team_id", "created_at", "updated_at"}).
+		AddRow(userID, "Jane Doe", "jane@example.com", string(hashedPassword), teamID, now, now)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("jane@example.com", 1).
+		WillReturnRows(userRows)
+
+	rMock.Regexp().ExpectSet(`^auth:session:.*`, `.*`, 7*24*time.Hour).SetVal("OK")
+
+	loginReq := dtos.LoginRequest{
+		Email:    "jane@example.com",
+		Password: rawPassword,
+	}
+	ctx := ctxmeta.WithClientMeta(context.Background(), "127.0.0.1", "Mozilla/5.0 TestAgent")
+
+	resp, err := svc.Login(ctx, loginReq)
+	if err != nil {
+		t.Fatalf("unexpected error during login: %v", err)
+	}
+
+	if resp == nil {
+		t.Fatal("expected non-nil login response")
+	}
+	if resp.Tokens.AccessToken == "" || resp.Tokens.RefreshToken == "" {
+		t.Fatal("expected non-empty access and refresh tokens")
+	}
+	if resp.Tokens.TokenType != "Bearer" {
+		t.Errorf("expected token type Bearer, got %s", resp.Tokens.TokenType)
+	}
+	if resp.User.Email != "jane@example.com" {
+		t.Errorf("expected user email jane@example.com, got %s", resp.User.Email)
+	}
+	if resp.User.ID != userID {
+		t.Errorf("expected user ID %v, got %v", userID, resp.User.ID)
+	}
+
+	if err := rMock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet redis expectations: %v", err)
+	}
+}
+
+func TestService_Login_UserNotFound(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	cfg := config.Config{
+		JWTSecret: "test-jwt-secret-key",
+	}
+	svc := New(cfg, repo, nil)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("unknown@example.com", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	loginReq := dtos.LoginRequest{
+		Email:    "unknown@example.com",
+		Password: "testPassword123",
+	}
+
+	resp, err := svc.Login(context.Background(), loginReq)
+	if !errors.Is(err, constants.ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if resp != nil {
+		t.Fatalf("expected nil response on not found, got %+v", resp)
+	}
+}
+
+func TestService_Login_InvalidPassword(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	cfg := config.Config{
+		JWTSecret: "test-jwt-secret-key",
+	}
+	svc := New(cfg, repo, nil)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	correctPassword := "correctPassword123"
+	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(correctPassword), bcrypt.DefaultCost)
+
+	userRows := sqlmock.NewRows([]string{"id", "name", "email", "password", "team_id", "created_at", "updated_at"}).
+		AddRow(userID, "Jane Doe", "jane@example.com", string(hashedPassword), teamID, now, now)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("jane@example.com", 1).
+		WillReturnRows(userRows)
+
+	loginReq := dtos.LoginRequest{
+		Email:    "jane@example.com",
+		Password: "wrongPassword123",
+	}
+
+	resp, err := svc.Login(context.Background(), loginReq)
+	if !errors.Is(err, constants.ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+	if resp != nil {
+		t.Fatalf("expected nil response on wrong password, got %+v", resp)
+	}
+}
+
+func TestService_Login_DatabaseError(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	cfg := config.Config{}
+	svc := New(cfg, repo, nil)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs("jane@example.com", 1).
+		WillReturnError(errors.New("db connection failure"))
+
+	loginReq := dtos.LoginRequest{
+		Email:    "jane@example.com",
+		Password: "testPassword123",
+	}
+
+	_, err := svc.Login(context.Background(), loginReq)
+	if err == nil {
+		t.Fatal("expected error on db failure, got nil")
+	}
+}
+

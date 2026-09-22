@@ -14,4 +14,8 @@ var (
 
 	// ErrUserNotFound is returned when user cannot be found.
 	ErrUserNotFound = errors.New("user not found")
+
+	// ErrInvalidToken is returned when a JWT token is expired, malformed, or has an invalid signature.
+	ErrInvalidToken = errors.New("invalid or expired token")
 )
+

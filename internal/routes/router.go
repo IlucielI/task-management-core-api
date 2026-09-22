@@ -11,6 +11,7 @@ import (
 
 	"task-management/internal/config"
 	"task-management/internal/controllers"
+	"task-management/internal/middlewares"
 )
 
 //go:embed routes.yaml
@@ -32,11 +33,11 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers) *gin.Engine {
 	}
 
 	router := gin.New()
-	router.Use(gin.Recovery(), gin.Logger())
+	router.Use(gin.Recovery(), gin.Logger(), middlewares.ClientMeta())
 
 	// Central controllers container
 	if ctrls == nil {
-		ctrls = controllers.New(cfg, nil, nil, nil)
+		ctrls = controllers.New(cfg, nil)
 	}
 	ctrlsVal := reflect.ValueOf(ctrls)
 

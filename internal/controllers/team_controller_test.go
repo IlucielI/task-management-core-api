@@ -43,11 +43,8 @@ func TestControllers_GetTeams_Success(t *testing.T) {
 
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(config.Config{}, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
 
 	teamID := uuid.New()
 	now := time.Now()
@@ -86,11 +83,8 @@ func TestControllers_GetTeams_RepositoryError(t *testing.T) {
 
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(config.Config{}, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
 
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE $1 ORDER BY name ASC`)).
 		WithArgs("%engineering%").
@@ -118,7 +112,7 @@ func TestControllers_GetTeams_RepositoryError(t *testing.T) {
 func TestControllers_GetTeams_ValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	// Generate string longer than 100 characters
 	longName := ""

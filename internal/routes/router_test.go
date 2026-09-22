@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -143,3 +145,55 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 		t.Fatalf("unexpected metadata: %+v", resp.Data.Metadata)
 	}
 }
+
+func TestRouter_PanicRecovery(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	// Register an endpoint that panics
+	router.GET("/v1/panic-test", func(c *gin.Context) {
+		panic("database connection string contains password123")
+	})
+
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest(http.MethodGet, "/v1/panic-test", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+
+	reqID := w.Header().Get("X-Request-ID")
+	if reqID == "" {
+		t.Error("expected X-Request-ID header in response")
+	}
+
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal JSON response: %v, body: %s", err, w.Body.String())
+	}
+
+	if resp.Success {
+		t.Errorf("expected success false, got true")
+	}
+	if resp.Code != constants.ResponseCodeInternalError {
+		t.Errorf("expected code %q, got %q", constants.ResponseCodeInternalError, resp.Code)
+	}
+	if resp.Message != "An internal server error occurred" {
+		t.Errorf("expected message 'An internal server error occurred', got %q", resp.Message)
+	}
+	if resp.Timestamp.IsZero() {
+		t.Errorf("expected non-zero timestamp")
+	}
+
+	bodyStr := w.Body.String()
+	if strings.Contains(bodyStr, "password123") {
+		t.Errorf("security violation: panic message leaked to response body: %s", bodyStr)
+	}
+}
+

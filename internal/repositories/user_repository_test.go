@@ -155,3 +155,106 @@ func TestRepositories_FindUserByID(t *testing.T) {
 	}
 }
 
+func TestRepositories_FindUsers(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	user1ID := uuid.New()
+	user2ID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	t.Run("success_with_all_filters", func(t *testing.T) {
+		filter := UserFilter{
+			TeamID: &teamID,
+			Name:   "alice",
+			Email:  "example.com",
+			Offset: 0,
+			Limit:  10,
+		}
+
+		// 1. Count query
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "users" WHERE team_id = $1 AND LOWER(name) LIKE LOWER($2) AND LOWER(email) LIKE LOWER($3)`)).
+			WithArgs(teamID, "%alice%", "%example.com%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		// 2. Find query
+		rows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(user1ID, "Alice", "alice@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE team_id = $1 AND LOWER(name) LIKE LOWER($2) AND LOWER(email) LIKE LOWER($3) ORDER BY name ASC LIMIT $4`)).
+			WithArgs(teamID, "%alice%", "%example.com%", 10).
+			WillReturnRows(rows)
+
+		users, total, err := repo.FindUsers(context.Background(), filter)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 1 || len(users) != 1 || users[0].Name != "Alice" {
+			t.Fatalf("unexpected result: total=%d, len=%d", total, len(users))
+		}
+	})
+
+	t.Run("success_without_filters", func(t *testing.T) {
+		filter := UserFilter{
+			Offset: 0,
+			Limit:  10,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "users"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+		rows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(user1ID, "Alice", "alice@example.com", teamID, now, now).
+			AddRow(user2ID, "Bob", "bob@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" ORDER BY name ASC LIMIT $1`)).
+			WithArgs(10).
+			WillReturnRows(rows)
+
+		users, total, err := repo.FindUsers(context.Background(), filter)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 2 || len(users) != 2 {
+			t.Fatalf("unexpected result: total=%d, len=%d", total, len(users))
+		}
+	})
+
+	t.Run("count_db_error", func(t *testing.T) {
+		filter := UserFilter{
+			Limit: 10,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "users"`)).
+			WillReturnError(errors.New("count failed"))
+
+		users, total, err := repo.FindUsers(context.Background(), filter)
+		if err == nil {
+			t.Fatal("expected error on count failure, got nil")
+		}
+		if users != nil || total != 0 {
+			t.Fatalf("expected nil users and 0 total, got users=%v total=%d", users, total)
+		}
+	})
+
+	t.Run("find_db_error", func(t *testing.T) {
+		filter := UserFilter{
+			Limit: 10,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "users"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" ORDER BY name ASC LIMIT $1`)).
+			WithArgs(10).
+			WillReturnError(errors.New("find failed"))
+
+		users, total, err := repo.FindUsers(context.Background(), filter)
+		if err == nil {
+			t.Fatal("expected error on find failure, got nil")
+		}
+		if users != nil || total != 0 {
+			t.Fatalf("expected nil users and 0 total, got users=%v total=%d", users, total)
+		}
+	})
+}
+

@@ -1,6 +1,8 @@
 package services
 
 import (
+	"gorm.io/gorm"
+
 	"task-management/internal/adapters/database"
 	"task-management/internal/adapters/redis"
 	"task-management/internal/adapters/s3"
@@ -11,25 +13,21 @@ import (
 // Service is the unified application service container.
 type Service struct {
 	cfg     config.Config
-	db      *database.Postgres
-	rdb     *redis.Redis
 	storage *s3.S3
 	repo    *repositories.Repositories
 }
 
 // New creates a new unified service container.
 func New(cfg config.Config, db *database.Postgres, rdb *redis.Redis, storage *s3.S3) *Service {
-	var repo *repositories.Repositories
-	if db != nil && db.DB() != nil {
-		repo = repositories.New(db.DB())
+	var gormDB *gorm.DB
+	if db != nil {
+		gormDB = db.DB()
 	}
 
 	return &Service{
 		cfg:     cfg,
-		db:      db,
-		rdb:     rdb,
 		storage: storage,
-		repo:    repo,
+		repo:    repositories.New(gormDB, rdb),
 	}
 }
 

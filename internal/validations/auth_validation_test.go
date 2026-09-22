@@ -64,3 +64,51 @@ func TestValidateRegisterRequest(t *testing.T) {
 		t.Fatal("expected error on nil team ID, got nil")
 	}
 }
+
+func TestValidateLoginRequest(t *testing.T) {
+	validReq := dtos.LoginRequest{
+		Email:    "john.doe@example.com",
+		Password: "password123",
+	}
+
+	// 1. Valid request
+	if err := ValidateLoginRequest(validReq); err != nil {
+		t.Fatalf("expected valid login request, got error: %v", err)
+	}
+
+	// 2. Missing Email
+	req := validReq
+	req.Email = ""
+	if err := ValidateLoginRequest(req); err == nil {
+		t.Fatal("expected error on empty email, got nil")
+	}
+
+	// 3. Invalid Email Format
+	req = validReq
+	req.Email = "invalid-email"
+	if err := ValidateLoginRequest(req); err == nil {
+		t.Fatal("expected error on invalid email, got nil")
+	}
+
+	// 4. Missing Password
+	req = validReq
+	req.Password = ""
+	if err := ValidateLoginRequest(req); err == nil {
+		t.Fatal("expected error on empty password, got nil")
+	}
+
+	// 5. Password too short (< 8)
+	req = validReq
+	req.Password = "short"
+	if err := ValidateLoginRequest(req); err == nil {
+		t.Fatal("expected error on short password, got nil")
+	}
+
+	// 6. Password too long (> 72)
+	req = validReq
+	req.Password = strings.Repeat("a", 73)
+	if err := ValidateLoginRequest(req); err == nil {
+		t.Fatal("expected error on long password, got nil")
+	}
+}
+

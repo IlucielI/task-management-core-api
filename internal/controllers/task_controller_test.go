@@ -261,3 +261,191 @@ func TestControllers_CreateTask_InternalError(t *testing.T) {
 	}
 }
 
+func TestControllers_GetTaskByID_InvalidUUID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls := New(config.Config{}, nil)
+
+	cases := []struct {
+		name string
+		id   string
+	}{
+		{"malformed id", "invalid-uuid"},
+		{"numeric id", "123456"},
+		{"nil uuid", uuid.Nil.String()},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(w)
+			ctx.Params = gin.Params{{Key: "id", Value: tc.id}}
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/test", nil)
+
+			ctrls.GetTaskByID(ctx)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d", w.Code)
+			}
+			var resp dtos.BaseResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("failed to unmarshal response: %v", err)
+			}
+			if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+				t.Fatalf("expected bad request response, got: %+v", resp)
+			}
+		})
+	}
+}
+
+func TestControllers_GetTaskByID_Unauthorized(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := repositories.New(nil)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
+	// No auth context attached
+
+	ctrls.GetTaskByID(ctx)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeUnauthorized {
+		t.Fatalf("expected UNAUTHORIZED code, got %s", resp.Code)
+	}
+}
+
+func TestControllers_GetTaskByID_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.GetTaskByID(ctx)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeNotFound {
+		t.Fatalf("expected NOT_FOUND code, got %s", resp.Code)
+	}
+}
+
+func TestControllers_GetTaskByID_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
+		AddRow(taskID, "Task Title", "Description", "todo", creatorID, teamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(rows)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.GetTaskByID(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	var resp dtos.APIResponse[*dtos.TaskResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "Task Title" {
+		t.Fatalf("unexpected task response: %+v", resp)
+	}
+}
+
+func TestControllers_GetTaskByID_InternalError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnError(errors.New("db query failure"))
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.GetTaskByID(ctx)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeInternalError {
+		t.Fatalf("expected INTERNAL_ERROR code, got %s", resp.Code)
+	}
+}
+
+

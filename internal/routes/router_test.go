@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"task-management/internal/config"
+	"task-management/internal/constants"
 	"task-management/internal/controllers"
+	"task-management/internal/dtos"
 	"task-management/internal/routes"
 )
 
@@ -28,30 +30,30 @@ func TestRouter_HealthCheck(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
-	var resp map[string]interface{}
+	var resp dtos.APIResponse[dtos.HealthData]
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if resp["status"] != "ok" {
-		t.Errorf("expected status 'ok', got %v", resp["status"])
+	if !resp.Success {
+		t.Errorf("expected success true, got %v", resp.Success)
 	}
-	if resp["version"] != cfg.Version {
-		t.Errorf("expected version %q, got %v", cfg.Version, resp["version"])
+	if resp.Code != constants.ResponseCodeSuccess {
+		t.Errorf("expected code %q, got %q", constants.ResponseCodeSuccess, resp.Code)
 	}
-	if resp["git_hash"] != cfg.GitHash {
-		t.Errorf("expected git_hash %q, got %v", cfg.GitHash, resp["git_hash"])
+	if resp.Message != constants.ResponseMessageSuccess {
+		t.Errorf("expected message %q, got %q", constants.ResponseMessageSuccess, resp.Message)
 	}
-	if resp["uptime"] == nil || resp["uptime"] == "" {
+	if resp.Data.Version != cfg.Version {
+		t.Errorf("expected version %q, got %q", cfg.Version, resp.Data.Version)
+	}
+	if resp.Data.GitHash != cfg.GitHash {
+		t.Errorf("expected git_hash %q, got %q", cfg.GitHash, resp.Data.GitHash)
+	}
+	if resp.Data.Uptime == "" {
 		t.Error("expected non-empty uptime in response")
 	}
-
-	services, ok := resp["services"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected services map in response, got %v", resp["services"])
-	}
-
-	if services["database"] != "disconnected" {
-		t.Errorf("expected database status 'disconnected' when db is nil, got %v", services["database"])
+	if resp.Data.Services.Database != constants.IntegrationStatusDisconnected {
+		t.Errorf("expected database status %q when db is nil, got %q", constants.IntegrationStatusDisconnected, resp.Data.Services.Database)
 	}
 }

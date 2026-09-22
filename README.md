@@ -1,64 +1,105 @@
 # Task Management Core API
 
-Task Management backend API.
+Robust, multi-tenant Task Management REST API built with Go, Gin, GORM, PostgreSQL, and Redis.
 
-## Scope
+## Table of Contents
+- [Architecture & Design Principles](#architecture--design-principles)
+- [Requirements Checklist](#requirements-checklist)
+- [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+- [Environment Setup](#environment-setup)
+- [Running the Application](#running-the-application)
+- [Running Tests](#running-tests)
+- [API Endpoints Reference](#api-endpoints-reference)
+  - [System & Diagnostics](#system--diagnostics)
+  - [Teams](#teams)
+  - [Authentication](#authentication)
+  - [Tasks](#tasks)
+  - [Users](#users)
+- [Special Features](#special-features)
+  - [Idempotency (POST /v1/tasks)](#idempotency-post-v1tasks)
+  - [Optimistic Concurrency Control](#optimistic-concurrency-control)
+  - [Database Transaction & Audit Trail](#database-transaction--audit-trail)
+  - [Multi-Tenant Boundary Isolation](#multi-tenant-boundary-isolation)
 
-This API provides the core backend services for task management:
+---
 
-- Manage tasks, priorities, statuses, and deadlines
-- Organize tasks with projects, tags, and assignees
-- Health checks and system diagnostics
+## Architecture & Design Principles
 
-## Architecture
+The project follows Clean Architecture with strict separation of concerns and dependency injection:
 
-The project uses a structured layout:
+```
+├── cmd/
+│   └── api/                # Application entrypoint & dependency wiring
+├── deployment/             # Dockerfile & Docker Compose configurations
+├── migrations/             # Versioned SQL migration files
+└── internal/
+    ├── adapters/           # Infrastructure adapters (PostgreSQL/GORM, Redis, S3)
+    ├── config/             # Environment variable configuration loading
+    ├── constants/          # Application-wide error codes, statuses, and response constants
+    ├── controllers/        # HTTP handlers parsing requests and rendering JSON responses
+    ├── dtos/               # Request payloads and API response definitions
+    ├── middlewares/        # HTTP middlewares (JWT Auth, Client Metadata)
+    ├── models/             # Domain entities mapping to database tables
+    ├── pkg/                # Reusable packages (AppError, Context Metadata, Notification)
+    ├── repositories/       # Data access layer interfacing with GORM & Redis
+    ├── routes/             # YAML-based route registration (`routes.yaml`) and engine setup
+    ├── services/           # Core business logic, validation orchestration, and transactions
+    └── validations/        # Struct input validations using Ozzo-Validation
+```
 
-- `cmd/api`: application entry point
-- `internal`:
-  - `controllers`: HTTP request/response handlers
-  - `services`: business logic and use cases
-  - `repositories`: data access contracts and implementations
-  - `models`: domain entities and database models
-  - `dtos`: data transfer objects for request payloads and API responses
-  - `validations`: input validation rules and request payload validators
-  - `constants`: domain constants, enums, status definitions, and error codes
-  - `utils`: reusable helper utilities (pagination, response formatters, date/time helpers)
-  - `routes`: HTTP route registration, YAML-based route configuration (`routes.yaml`), and middleware setup
-  - `adapters`: external-service adapters such as database, object storage, or LLM clients
-  - `config`: environment-based application configuration
-- `migrations`: SQL migration files for database schema versioning
-- `deployment`: Docker, Docker Compose, and container build scripts
+---
+
+## Requirements Checklist
+
+| Requirement | Implementation Details | Status |
+| :--- | :--- | :---: |
+| **Authentication** | User registration, login, dual JWT tokens (Access & Refresh) | ✅ Complete |
+| **Task CRUD** | Create, List (filter/search/pagination), Detail, Update, Delete | ✅ Complete |
+| **1. Idempotency** | `Idempotency-Key` (UUID header), 24h Redis cache, concurrent race-condition safe | ✅ Complete |
+| **2. Structured Errors** | Unified `AppError`, consistent envelope, client (4xx) vs server (5xx) masking | ✅ Complete |
+| **3. Transaction & Integrity**| `POST /v1/tasks/:id/assign` with atomic DB transaction, audit logs (`task_logs`), async notification | ✅ Complete |
+| **4. Concurrency Control** | Optimistic locking on task updates and assignments via `version` column | ✅ Complete |
+| **5. Multi-Tenant Isolation** | Strict team boundaries: users can only view/manage tasks and assignees in their team | ✅ Complete |
+| **6. Unit Testing** | 100% isolated tests using `sqlmock` and in-memory mocks without external DB | ✅ Complete |
+
+---
+
+## Tech Stack
+- **Language**: Go 1.25+
+- **HTTP Framework**: Gin Web Framework (`github.com/gin-gonic/gin`)
+- **Database ORM**: GORM (`gorm.io/gorm`) with PostgreSQL driver
+- **Cache & Concurrency Lock**: Redis (`github.com/redis/go-redis/v9`)
+- **Validation**: Ozzo-Validation (`github.com/go-ozzo/ozzo-validation/v4`)
+- **Authentication**: JWT (`github.com/golang-jwt/jwt/v5`) & Bcrypt
+- **Unique IDs**: UUID v4 (`github.com/google/uuid`)
+
+---
 
 ## Prerequisites
-
-For local Go development:
-
 - Go 1.25 or newer
+- Docker & Docker Compose (optional, for containerized run)
+- PostgreSQL 16+ & Redis 7+
 
-For Docker development:
-
-- Docker
-- Docker Compose
+---
 
 ## Environment Setup
 
-Create a local environment file before running the app:
+Create an environment configuration file from `.env.example`:
 
 ```bash
 cp .env.example .env
 ```
 
-Default values:
+Key environment configurations:
 
 ```env
 APP_NAME=task-management-core-api
 APP_ENV=development
 APP_VERSION=0.1.0
-GIT_HASH=dev
 HTTP_PORT=8080
 
-# Database Configuration (PostgreSQL)
+# PostgreSQL Configuration
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=postgres
@@ -66,64 +107,505 @@ POSTGRES_PASSWORD=postgres
 POSTGRES_DB=task_management
 POSTGRES_SSLMODE=disable
 
-# Connection Pool Settings
-DB_POOL_MAX_OPEN_CONN=25
-DB_POOL_MAX_IDLE_CONN=10
-DB_POOL_MAX_CONN_LIFETIME=30m
-DB_POOL_MAX_CONN_IDLE_TIME=10m
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# JWT Configuration
+JWT_SECRET=supersecretjwtkeychangeinproduction
+JWT_ACCESS_EXPIRY=15m
+JWT_REFRESH_EXPIRY=168h
 ```
 
-`APP_VERSION` and `GIT_HASH` are loaded from environment variables (`.env`) or injected via Docker build arguments.
+---
 
-## Run Locally with Go
+## Running the Application
 
-Install dependencies and start the API:
-
+### 1. Run Locally with Go
 ```bash
+# Run database migrations
+# Start PostgreSQL & Redis services locally or via docker-compose
+
+# Download dependencies
 go mod tidy
+
+# Start API server
 go run ./cmd/api
 ```
+The server will start listening at `http://localhost:8080`.
 
-The API starts on `http://localhost:8080` by default.
-
-## Run with Docker
-
-Build the dependency base image once:
-
+### 2. Run with Docker Compose
 ```bash
-./deployment/build-base.sh
+docker compose -f deployment/docker-compose.yaml up --build
 ```
 
-Build the application image:
+---
+
+## Running Tests
+
+All unit tests run completely in-memory without requiring external database or Redis instances:
 
 ```bash
-./deployment/build-api.sh
+go test -v -count=1 ./...
 ```
 
-Run the container:
+---
 
-```bash
-docker compose -f deployment/docker-compose.yaml up
-```
+## API Endpoints Reference
 
-If only source code changes, rerun `./deployment/build-api.sh`. If `go.mod` or `go.sum` changes, rerun both build scripts.
+All endpoints return JSON wrapped in standard envelopes:
+- **Success Envelope**: `{"success": true, "code": "OK", "message": "...", "data": ..., "timestamp": "2026-09-23T02:00:00Z"}`
+- **Error Envelope**: `{"success": false, "code": "<ERROR_CODE>", "message": "...", "timestamp": "2026-09-23T02:00:00Z"}`
 
-## Health Check
+---
 
-```bash
-curl http://localhost:8080/v1/health
-```
+### System & Diagnostics
 
-Example response:
-
+#### `GET /v1/health`
+Check application and database health status.
+- **Auth**: None
+- **Response**: `200 OK`
 ```json
 {
-  "status": "ok",
-  "version": "0.1.0",
-  "uptime": "10.5s",
-  "git_hash": "dev",
-  "services": {
-    "database": "connected"
-  }
+  "success": true,
+  "code": "OK",
+  "message": "Success",
+  "data": {
+    "version": "0.1.0",
+    "git_hash": "dev",
+    "uptime": "1m30s",
+    "services": {
+      "database": "connected",
+      "redis": "connected",
+      "s3": "connected"
+    }
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
 }
 ```
+
+---
+
+### Teams
+
+#### `GET /v1/teams`
+Retrieve all available teams with keyword filtering, customizable sorting, and pagination metadata.
+- **Auth**: None
+- **Query Parameters**:
+  - `page` (default: 1)
+  - `limit` (default: 10, max: 100)
+  - `name` (optional: partial team name search keyword)
+  - `order_by` (optional: `name-asc` (default), `name-desc`, `latest`, `earliest`)
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Teams retrieved successfully",
+  "data": {
+    "items": [
+      {
+        "id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+        "name": "Engineering",
+        "created_at": "2026-09-23T01:00:00Z",
+        "updated_at": "2026-09-23T01:00:00Z"
+      }
+    ],
+    "metadata": {
+      "count": 1,
+      "limit": 10,
+      "page": 1,
+      "total_pages": 1
+    }
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+---
+
+### Authentication
+
+#### `POST /v1/auth/register`
+Register a new user under a specific team.
+- **Auth**: None
+- **Request Body**:
+```json
+{
+  "name": "Bayu Pratama",
+  "email": "bayu@example.com",
+  "password": "Password123!",
+  "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51"
+}
+```
+- **Response**: `201 Created`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "User registered successfully",
+  "data": {
+    "id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+    "name": "Bayu Pratama",
+    "email": "bayu@example.com",
+    "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+    "created_at": "2026-09-23T02:00:00Z",
+    "updated_at": "2026-09-23T02:00:00Z"
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+#### `POST /v1/auth/login`
+Authenticate user credentials and receive JWT token pair with user profile.
+- **Auth**: None
+- **Request Body**:
+```json
+{
+  "email": "bayu@example.com",
+  "password": "Password123!"
+}
+```
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "User authenticated successfully",
+  "data": {
+    "tokens": {
+      "access_token": "eyJhbGciOi...",
+      "refresh_token": "eyJhbGciOi...",
+      "token_type": "Bearer",
+      "expires_in": 900,
+      "refresh_expires_in": 604800
+    },
+    "user": {
+      "id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+      "name": "Bayu Pratama",
+      "email": "bayu@example.com",
+      "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+      "created_at": "2026-09-23T02:00:00Z",
+      "updated_at": "2026-09-23T02:00:00Z"
+    }
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+---
+
+### Tasks
+
+All Task endpoints require `Authorization: Bearer <access_token>`.
+
+#### Domain Types & Workflow
+- **Task Statuses (`TaskStatus`)**:
+  - `todo` (default upon creation)
+  - `in_progress`
+  - `code_review`
+  - `ready_for_qa`
+  - `done`
+- **Task Audit Actions (`TaskAction`)**:
+  - `CREATE`: Initial task creation entry
+  - `UPDATE`: Content, title, description, or status changes
+  - `ASSIGN`: Assignee reassignments
+  - `STATUS_UPDATE`: Direct status transitions
+  - `DELETE`: Task soft-deletion
+- **Sort Orders (`SortOrder`)**:
+  - `latest` (default: `created_at DESC`)
+  - `earliest` (`created_at ASC`)
+  - `lastUpdated` (`updated_at DESC`)
+  - `title-asc` (`title ASC`)
+  - `title-desc` (`title DESC`)
+
+#### `POST /v1/tasks` (Create Task)
+Create a new task with required 24h idempotency key.
+- **Auth**: Required
+- **Headers**:
+  - `Authorization: Bearer <access_token>`
+  - `Idempotency-Key: <UUID>` *(Required)*
+- **Request Body**:
+```json
+{
+  "title": "Implement Payment Integration",
+  "description": "Integrate third-party payment gateway webhook",
+  "status": "todo",
+  "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+}
+```
+> `status` is optional (default: `todo`). Valid values: `todo`, `in_progress`, `code_review`, `ready_for_qa`, `done`.
+
+- **Response**: `201 Created`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Task created successfully",
+  "data": {
+    "id": "1c7a889b-734d-4ba6-86d7-cb3914a84e62",
+    "title": "Implement Payment Integration",
+    "description": "Integrate third-party payment gateway webhook",
+    "status": "todo",
+    "creator_id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+    "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+    "version": 1,
+    "created_at": "2026-09-23T02:00:00Z",
+    "updated_at": "2026-09-23T02:00:00Z"
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+#### `GET /v1/tasks` (List Tasks)
+List tasks with status filtering, title search, user/team filters, customizable sorting, and pagination.
+- **Auth**: Required
+- **Query Parameters**:
+  - `page` (default: 1)
+  - `limit` (default: 10, max: 100)
+  - `status` (optional: `todo`, `in_progress`, `code_review`, `ready_for_qa`, `done`)
+  - `title` (optional: partial search keyword)
+  - `team_id` (optional: filter by team UUID, caller must belong to this team)
+  - `creator_id` (optional: filter by creator UUID)
+  - `assignee_id` (optional: filter by assignee UUID)
+  - `order_by` (optional: `latest` (default), `earliest`, `lastUpdated`, `title-asc`, `title-desc`)
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Tasks retrieved successfully",
+  "data": {
+    "items": [
+      {
+        "id": "1c7a889b-734d-4ba6-86d7-cb3914a84e62",
+        "title": "Implement Payment Integration",
+        "description": "Integrate third-party payment gateway webhook",
+        "status": "todo",
+        "creator_id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+        "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+        "version": 1,
+        "created_at": "2026-09-23T02:00:00Z",
+        "updated_at": "2026-09-23T02:00:00Z"
+      }
+    ],
+    "metadata": {
+      "count": 1,
+      "limit": 10,
+      "page": 1,
+      "total_pages": 1
+    }
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+#### `GET /v1/tasks/:id` (Get Task Detail)
+Retrieve task details by UUID within the caller's team, enriched with creator, assignee, team, and activity logs.
+- **Auth**: Required
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Task retrieved successfully",
+  "data": {
+    "id": "1c7a889b-734d-4ba6-86d7-cb3914a84e62",
+    "title": "Implement Payment Integration",
+    "description": "Integrate third-party payment gateway webhook",
+    "status": "todo",
+    "creator_id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+    "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+    "version": 1,
+    "created_at": "2026-09-23T02:00:00Z",
+    "updated_at": "2026-09-23T02:00:00Z",
+    "creator": {
+      "id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+      "name": "Bayu Pratama",
+      "email": "bayu@example.com",
+      "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+      "created_at": "2026-09-23T01:00:00Z",
+      "updated_at": "2026-09-23T01:00:00Z"
+    },
+    "assignee": {
+      "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+      "name": "Budi Santoso",
+      "email": "budi@example.com",
+      "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+      "created_at": "2026-09-23T01:15:00Z",
+      "updated_at": "2026-09-23T01:15:00Z"
+    },
+    "team": {
+      "id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+      "name": "Backend Engineering",
+      "created_at": "2026-09-23T00:00:00Z",
+      "updated_at": "2026-09-23T00:00:00Z"
+    },
+    "logs": [
+      {
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "action": "CREATE",
+        "actor_id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+        "to_assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+        "to_status": "todo",
+        "created_at": "2026-09-23T02:00:00Z"
+      }
+    ]
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+#### `PUT /v1/tasks/:id` (Update Task)
+Update task fields with optimistic locking protection.
+- **Auth**: Required
+- **Request Body**:
+```json
+{
+  "title": "Updated Task Title",
+  "status": "in_progress",
+  "version": 1
+}
+```
+> `status` is optional. Valid values: `todo`, `in_progress`, `code_review`, `ready_for_qa`, `done`.
+
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Task updated successfully",
+  "data": {
+    "id": "1c7a889b-734d-4ba6-86d7-cb3914a84e62",
+    "title": "Updated Task Title",
+    "description": "Integrate third-party payment gateway webhook",
+    "status": "in_progress",
+    "creator_id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+    "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+    "version": 2,
+    "created_at": "2026-09-23T02:00:00Z",
+    "updated_at": "2026-09-23T02:05:00Z"
+  },
+  "timestamp": "2026-09-23T02:05:00Z"
+}
+```
+- **Conflict**: Returns `409 Conflict` if submitted `version` does not match the current database version.
+
+#### `DELETE /v1/tasks/:id` (Delete Task)
+Soft-deletes a task and writes a deletion entry to audit log.
+- **Auth**: Required
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Task deleted successfully",
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+#### `POST /v1/tasks/:id/assign` (Assign Task)
+Assign a task to another user within the same team.
+- **Auth**: Required
+- **Request Body**:
+```json
+{
+  "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "version": 1
+}
+```
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Task assigned successfully",
+  "data": {
+    "id": "1c7a889b-734d-4ba6-86d7-cb3914a84e62",
+    "title": "Updated Task Title",
+    "description": "Integrate third-party payment gateway webhook",
+    "status": "in_progress",
+    "creator_id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+    "assignee_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+    "version": 2,
+    "created_at": "2026-09-23T02:00:00Z",
+    "updated_at": "2026-09-23T02:10:00Z"
+  },
+  "timestamp": "2026-09-23T02:10:00Z"
+}
+```
+- **Validation**: Returns `400 Bad Request` if assignee belongs to another team, or `409 Conflict` if version mismatch.
+
+---
+
+### Users
+
+#### `GET /v1/users` (List Team Users)
+List users belonging to the caller's team with optional name and email filters and custom sorting.
+- **Auth**: Required
+- **Query Parameters**:
+  - `page` (default: 1)
+  - `limit` (default: 10, max: 100)
+  - `name` (optional: search filter)
+  - `email` (optional: search filter)
+  - `order_by` (optional: `name-asc` (default), `name-desc`, `latest`, `earliest`, `email-asc`, `email-desc`)
+- **Response**: `200 OK`
+```json
+{
+  "success": true,
+  "code": "OK",
+  "message": "Users retrieved successfully",
+  "data": {
+    "items": [
+      {
+        "id": "8f88cb04-e0c9-46be-8f35-648cf498bc51",
+        "name": "Bayu Pratama",
+        "email": "bayu@example.com",
+        "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51",
+        "created_at": "2026-09-23T02:00:00Z",
+        "updated_at": "2026-09-23T02:00:00Z"
+      }
+    ],
+    "metadata": {
+      "count": 1,
+      "limit": 10,
+      "page": 1,
+      "total_pages": 1
+    }
+  },
+  "timestamp": "2026-09-23T02:00:00Z"
+}
+```
+
+---
+
+## Special Features
+
+### Idempotency (`POST /v1/tasks`)
+- Client sends a unique UUID in `Idempotency-Key` header.
+- Redis evaluates key existence atomically.
+- Subsequent identical requests within a 24-hour window return the cached response immediately.
+- Concurrent duplicate requests are locked, ensuring only exactly one database record is created.
+
+### Optimistic Concurrency Control
+- All mutating task operations (`PUT /v1/tasks/:id` and `POST /v1/tasks/:id/assign`) require an explicit `version` integer.
+- Updates execute with conditional SQL: `WHERE id = ? AND version = ?`.
+- If another concurrent transaction modified the task first, the database returns `0 rows affected`, and the API immediately returns `409 Conflict` (`stale resource version`).
+
+### Database Transaction & Audit Trail
+- Multi-step operations (`AssignTask` and `UpdateTask`) run inside atomic transactions.
+- Audit history is preserved in `task_logs` containing `actor_id`, `from_assignee_id`, `to_assignee_id`, action type, and timestamp.
+- Failure of any query automatically triggers a transaction rollback.
+- External notifications are dispatched asynchronously after transaction commit to ensure database operations are never blocked.
+
+### Multi-Tenant Boundary Isolation
+- Strict team isolation is enforced at the service level:
+  - Users can only query, update, assign, or delete tasks belonging to their own `team_id`.
+  - Attempts to access tasks from another team return `404 Not Found`.
+  - Assignees must belong to the caller's team, otherwise rejected with `400 Bad Request`.

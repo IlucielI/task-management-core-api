@@ -10,3 +10,8 @@ routes:
   - method: GET
     path: /v1/teams
     handler: GetTeams
+
+  # Auth endpoints
+  - method: POST
+    path: /v1/auth/register
+    handler: Register

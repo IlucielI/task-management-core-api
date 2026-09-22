@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 	"time"
@@ -351,6 +352,44 @@ func TestRepositories_FindTasks(t *testing.T) {
 		}
 	})
 
+	t.Run("success_with_custom_order_by", func(t *testing.T) {
+		testCases := []struct {
+			orderBy     constants.SortOrder
+			expectedSQL string
+		}{
+			{constants.SortByEarliest, `ORDER BY created_at ASC`},
+			{constants.SortByLastUpdated, `ORDER BY updated_at DESC`},
+			{constants.SortByTitleAsc, `ORDER BY title ASC`},
+			{constants.SortByTitleDesc, `ORDER BY title DESC`},
+		}
+
+		for _, tc := range testCases {
+			filter := TaskFilter{
+				TeamID:  &teamID,
+				OrderBy: tc.orderBy,
+				Limit:   5,
+			}
+
+			mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+				WithArgs(teamID).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+			rows := sqlmock.NewRows([]string{"id", "title", "status", "team_id", "created_at", "updated_at"}).
+				AddRow(task1ID, "Task Ordered", "todo", teamID, now, now)
+			mock.ExpectQuery(regexp.QuoteMeta(fmt.Sprintf(`SELECT * FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL %s LIMIT $2`, tc.expectedSQL))).
+				WithArgs(teamID, 5).
+				WillReturnRows(rows)
+
+			tasks, total, err := repo.FindTasks(context.Background(), filter)
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", tc.orderBy, err)
+			}
+			if total != 1 || len(tasks) != 1 {
+				t.Fatalf("expected 1 task, got %d", len(tasks))
+			}
+		}
+	})
+
 	t.Run("count_db_error", func(t *testing.T) {
 		filter := TaskFilter{
 			TeamID: &teamID,
@@ -497,15 +536,15 @@ func TestRepositories_AssignTaskWithLog(t *testing.T) {
 	nextVersion := 2
 
 	task := &models.Task{
-		ID:          taskID,
-		Title:       "Assignment Task",
-		Status:      "todo",
-		CreatorID:   creatorID,
-		AssigneeID:  &assigneeID,
-		TeamID:      teamID,
-		Version:     nextVersion,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:         taskID,
+		Title:      "Assignment Task",
+		Status:     "todo",
+		CreatorID:  creatorID,
+		AssigneeID: &assigneeID,
+		TeamID:     teamID,
+		Version:    nextVersion,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 
 	log := &models.TaskLog{
@@ -563,5 +602,3 @@ func TestRepositories_AssignTaskWithLog(t *testing.T) {
 		t.Fatal("expected error on log create failure, got nil")
 	}
 }
-
-

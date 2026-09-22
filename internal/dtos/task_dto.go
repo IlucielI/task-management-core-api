@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"task-management/internal/constants"
 )
 
 // CreateTaskRequest defines payload for task creation.
@@ -85,11 +87,12 @@ type ListTasksData struct {
 
 // ListTasksQuery represents URL query parameters for task listing, filtering, and pagination.
 type ListTasksQuery struct {
-	Page       int        `form:"page"`
-	Limit      int        `form:"limit"`
-	Status     string     `form:"status"`
-	Title      string     `form:"title"`
-	TeamID     *uuid.UUID `form:"team_id"`
-	CreatorID  *uuid.UUID `form:"creator_id"`
-	AssigneeID *uuid.UUID `form:"assignee_id"`
+	Page       int                 `form:"page"`
+	Limit      int                 `form:"limit"`
+	Status     string              `form:"status"`
+	Title      string              `form:"title"`
+	TeamID     *uuid.UUID          `form:"team_id"`
+	CreatorID  *uuid.UUID          `form:"creator_id"`
+	AssigneeID *uuid.UUID          `form:"assignee_id"`
+	OrderBy    constants.SortOrder `form:"order_by"`
 }

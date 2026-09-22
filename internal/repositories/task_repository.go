@@ -130,6 +130,7 @@ type TaskFilter struct {
 	AssigneeID *uuid.UUID
 	Status     string
 	Title      string
+	OrderBy    constants.SortOrder
 	Offset     int
 	Limit      int
 }
@@ -163,11 +164,24 @@ func (r *Repositories) FindTasks(ctx context.Context, filter TaskFilter) ([]mode
 		return nil, 0, err
 	}
 
+	var orderClause string
+	switch filter.OrderBy {
+	case constants.SortByEarliest:
+		orderClause = "created_at ASC"
+	case constants.SortByLastUpdated:
+		orderClause = "updated_at DESC"
+	case constants.SortByTitleAsc:
+		orderClause = "title ASC"
+	case constants.SortByTitleDesc:
+		orderClause = "title DESC"
+	default:
+		orderClause = "created_at DESC"
+	}
+
 	var tasks []models.Task
-	if err := query.Order("created_at DESC").Offset(filter.Offset).Limit(filter.Limit).Find(&tasks).Error; err != nil {
+	if err := query.Order(orderClause).Offset(filter.Offset).Limit(filter.Limit).Find(&tasks).Error; err != nil {
 		return nil, 0, err
 	}
 
 	return tasks, total, nil
 }
-

@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	stdlog "log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -221,6 +221,7 @@ func (s *Service) ListTasks(ctx context.Context, query dtos.ListTasksQuery) (*dt
 		AssigneeID: query.AssigneeID,
 		Status:     strings.TrimSpace(query.Status),
 		Title:      strings.TrimSpace(query.Title),
+		OrderBy:    query.OrderBy,
 		Offset:     offset,
 		Limit:      query.Limit,
 	}
@@ -475,4 +476,3 @@ func composeTaskResponse(task *models.Task) *dtos.TaskResponse {
 
 	return resp
 }
-

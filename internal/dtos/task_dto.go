@@ -34,3 +34,28 @@ type CachedIdempotentResponse struct {
 	Message    string        `json:"message"`
 	Timestamp  time.Time     `json:"timestamp"`
 }
+
+// ListMetadata represents pagination metadata.
+type ListMetadata struct {
+	Count      int64 `json:"count"`
+	Limit      int64 `json:"limit"`
+	Page       int   `json:"page"`
+	TotalPages int   `json:"total_pages"`
+}
+
+// ListTasksData represents the paginated task list payload containing items and metadata.
+type ListTasksData struct {
+	Items    []*TaskResponse `json:"items"`
+	Metadata ListMetadata    `json:"metadata"`
+}
+
+// ListTasksQuery represents URL query parameters for task listing, filtering, and pagination.
+type ListTasksQuery struct {
+	Page       int        `form:"page"`
+	Limit      int        `form:"limit"`
+	Status     string     `form:"status"`
+	Title      string     `form:"title"`
+	TeamID     *uuid.UUID `form:"team_id"`
+	CreatorID  *uuid.UUID `form:"creator_id"`
+	AssigneeID *uuid.UUID `form:"assignee_id"`
+}

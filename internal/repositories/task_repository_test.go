@@ -207,4 +207,113 @@ func TestRepositories_DeleteTaskWithLog(t *testing.T) {
 	}
 }
 
+func TestRepositories_FindTasks(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	teamID := uuid.New()
+	task1ID := uuid.New()
+	task2ID := uuid.New()
+	now := time.Now()
+
+	t.Run("success_with_all_filters", func(t *testing.T) {
+		filter := TaskFilter{
+			TeamID: &teamID,
+			Status: "in_progress",
+			Title:  "bug",
+			Offset: 0,
+			Limit:  10,
+		}
+
+		// 1. Count query
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND status = $2 AND LOWER(title) LIKE LOWER($3) AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID, "in_progress", "%bug%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+		// 2. Find query
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "team_id", "created_at", "updated_at"}).
+			AddRow(task1ID, "Fix login bug", "desc", "in_progress", teamID, now, now).
+			AddRow(task2ID, "Fix payment bug", "desc", "in_progress", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND status = $2 AND LOWER(title) LIKE LOWER($3) AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $4`)).
+			WithArgs(teamID, "in_progress", "%bug%", 10).
+			WillReturnRows(rows)
+
+		tasks, total, err := repo.FindTasks(context.Background(), filter)
+		if err != nil {
+			t.Fatalf("unexpected error finding tasks: %v", err)
+		}
+		if total != 2 || len(tasks) != 2 {
+			t.Fatalf("expected 2 tasks, got total=%d len=%d", total, len(tasks))
+		}
+	})
+
+	t.Run("success_without_filters", func(t *testing.T) {
+		filter := TaskFilter{
+			TeamID: &teamID,
+			Offset: 10,
+			Limit:  10,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(15))
+
+		rows := sqlmock.NewRows([]string{"id", "title", "status", "team_id", "created_at", "updated_at"}).
+			AddRow(task1ID, "Task 11", "todo", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $2 OFFSET $3`)).
+			WithArgs(teamID, 10, 10).
+			WillReturnRows(rows)
+
+		tasks, total, err := repo.FindTasks(context.Background(), filter)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if total != 15 || len(tasks) != 1 {
+			t.Fatalf("expected total=15 len=1, got total=%d len=%d", total, len(tasks))
+		}
+	})
+
+	t.Run("count_db_error", func(t *testing.T) {
+		filter := TaskFilter{
+			TeamID: &teamID,
+			Limit:  10,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID).
+			WillReturnError(errors.New("db count error"))
+
+		tasks, total, err := repo.FindTasks(context.Background(), filter)
+		if err == nil {
+			t.Fatal("expected error on count failure, got nil")
+		}
+		if tasks != nil || total != 0 {
+			t.Fatalf("expected nil tasks and 0 total, got tasks=%v total=%d", tasks, total)
+		}
+	})
+
+	t.Run("find_db_error", func(t *testing.T) {
+		filter := TaskFilter{
+			TeamID: &teamID,
+			Limit:  10,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $2`)).
+			WithArgs(teamID, 10).
+			WillReturnError(errors.New("db find error"))
+
+		tasks, total, err := repo.FindTasks(context.Background(), filter)
+		if err == nil {
+			t.Fatal("expected error on find failure, got nil")
+		}
+		if tasks != nil || total != 0 {
+			t.Fatalf("expected nil tasks and 0 total, got tasks=%v total=%d", tasks, total)
+		}
+	})
+}
+
 

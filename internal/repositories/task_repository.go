@@ -54,3 +54,51 @@ func (r *Repositories) DeleteTaskWithLog(ctx context.Context, id uuid.UUID, log 
 	})
 }
 
+// TaskFilter represents search, filter, and pagination criteria for tasks.
+type TaskFilter struct {
+	TeamID     *uuid.UUID
+	CreatorID  *uuid.UUID
+	AssigneeID *uuid.UUID
+	Status     string
+	Title      string
+	Offset     int
+	Limit      int
+}
+
+// FindTasks retrieves a paginated slice of tasks and total count matching filter criteria.
+func (r *Repositories) FindTasks(ctx context.Context, filter TaskFilter) ([]models.Task, int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.Task{})
+
+	if filter.TeamID != nil {
+		query = query.Where("team_id = ?", *filter.TeamID)
+	}
+
+	if filter.CreatorID != nil {
+		query = query.Where("creator_id = ?", *filter.CreatorID)
+	}
+
+	if filter.AssigneeID != nil {
+		query = query.Where("assignee_id = ?", *filter.AssigneeID)
+	}
+
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+
+	if filter.Title != "" {
+		query = query.Where("LOWER(title) LIKE LOWER(?)", "%"+filter.Title+"%")
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var tasks []models.Task
+	if err := query.Order("created_at DESC").Offset(filter.Offset).Limit(filter.Limit).Find(&tasks).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return tasks, total, nil
+}
+

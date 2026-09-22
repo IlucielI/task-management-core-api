@@ -21,6 +21,11 @@ routes:
     handler: Login
 
   # Task endpoints
+  - method: GET
+    path: /v1/tasks
+    handler: ListTasks
+    auth: true
+
   - method: POST
     path: /v1/tasks
     handler: CreateTask

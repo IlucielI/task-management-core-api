@@ -138,3 +138,115 @@ func TestValidateTaskID(t *testing.T) {
 	}
 }
 
+func TestValidateListTasksQuery(t *testing.T) {
+	validUUID := uuid.New()
+	nilUUID := uuid.Nil
+
+	tests := []struct {
+		name      string
+		query     *dtos.ListTasksQuery
+		wantErr   bool
+		checkFunc func(t *testing.T, q *dtos.ListTasksQuery)
+	}{
+		{
+			name:    "nil query",
+			query:   nil,
+			wantErr: true,
+		},
+		{
+			name: "empty defaults applied",
+			query: &dtos.ListTasksQuery{
+				Page:  0,
+				Limit: 0,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListTasksQuery) {
+				if q.Page != 1 || q.Limit != 10 {
+					t.Errorf("expected page=1, limit=10, got page=%d, limit=%d", q.Page, q.Limit)
+				}
+			},
+		},
+		{
+			name: "limit capped at 100",
+			query: &dtos.ListTasksQuery{
+				Page:  1,
+				Limit: 500,
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListTasksQuery) {
+				if q.Limit != 100 {
+					t.Errorf("expected limit=100, got limit=%d", q.Limit)
+				}
+			},
+		},
+		{
+			name: "title trim whitespace",
+			query: &dtos.ListTasksQuery{
+				Title: "  Bug Fix  ",
+			},
+			wantErr: false,
+			checkFunc: func(t *testing.T, q *dtos.ListTasksQuery) {
+				if q.Title != "Bug Fix" {
+					t.Errorf("expected title='Bug Fix', got '%s'", q.Title)
+				}
+			},
+		},
+		{
+			name: "valid status",
+			query: &dtos.ListTasksQuery{
+				Status: constants.TaskStatusInProgress,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid status",
+			query: &dtos.ListTasksQuery{
+				Status: "non_existent_status",
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid uuid filters",
+			query: &dtos.ListTasksQuery{
+				TeamID:     &validUUID,
+				CreatorID:  &validUUID,
+				AssigneeID: &validUUID,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid nil team_id",
+			query: &dtos.ListTasksQuery{
+				TeamID: &nilUUID,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid nil creator_id",
+			query: &dtos.ListTasksQuery{
+				CreatorID: &nilUUID,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid nil assignee_id",
+			query: &dtos.ListTasksQuery{
+				AssigneeID: &nilUUID,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateListTasksQuery(tt.query)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateListTasksQuery() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && tt.checkFunc != nil {
+				tt.checkFunc(t, tt.query)
+			}
+		})
+	}
+}
+

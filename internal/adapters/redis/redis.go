@@ -44,6 +44,11 @@ func New(cfg config.Config) (*Redis, error) {
 	return &Redis{client: rdb}, nil
 }
 
+// NewWithClient wraps an existing *redis.Client in a Redis adapter (e.g. for testing with mocks).
+func NewWithClient(client *redis.Client) *Redis {
+	return &Redis{client: client}
+}
+
 // Client returns the underlying *redis.Client for custom/advanced operations.
 func (r *Redis) Client() *redis.Client {
 	if r == nil {

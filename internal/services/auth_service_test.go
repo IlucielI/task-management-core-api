@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"testing"
@@ -16,7 +17,9 @@ import (
 	"task-management/internal/config"
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
+	"task-management/internal/models"
 	"task-management/internal/pkg/ctxmeta"
+	"task-management/internal/pkg/jwt"
 	"task-management/internal/repositories"
 
 	"golang.org/x/crypto/bcrypt"
@@ -345,4 +348,89 @@ func TestService_Login_DatabaseError(t *testing.T) {
 		t.Fatal("expected error on db failure, got nil")
 	}
 }
+
+func TestService_Authenticate(t *testing.T) {
+	cfg := config.Config{
+		JWTSecret:             "test-secret-key-that-is-long-enough-32bytes",
+		JWTAccessExpiration:  15 * time.Minute,
+		JWTRefreshExpiration: 24 * time.Hour,
+	}
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	user := &models.User{
+		ID:     userID,
+		Email:  "auth@example.com",
+		TeamID: teamID,
+	}
+
+	sessionID := uuid.New().String()
+	tokenPair, err := jwt.GenerateTokenPair(cfg, user, sessionID)
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	t.Run("valid token with active session in redis", func(t *testing.T) {
+		client, rmock := redismock.NewClientMock()
+		rdb := redis.NewWithClient(client)
+		repo := repositories.New(nil, rdb)
+		svc := New(cfg, repo, nil)
+
+		sessionData := dtos.SessionData{
+			SessionID: sessionID,
+			UserID:    userID,
+			Email:     "auth@example.com",
+			TeamID:    teamID,
+		}
+		sessionBytes, _ := json.Marshal(sessionData)
+		rmock.ExpectGet("auth:session:" + sessionID).SetVal(string(sessionBytes))
+
+		authUser, err := svc.Authenticate(context.Background(), tokenPair.AccessToken)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if authUser == nil || authUser.UserID != userID || authUser.Email != "auth@example.com" {
+			t.Fatalf("unexpected authUser: %+v", authUser)
+		}
+	})
+
+	t.Run("valid token without session repo (stateless fallback)", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+		authUser, err := svc.Authenticate(context.Background(), tokenPair.AccessToken)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if authUser == nil || authUser.UserID != userID {
+			t.Fatalf("unexpected authUser: %+v", authUser)
+		}
+	})
+
+	t.Run("expired or missing session in redis", func(t *testing.T) {
+		client, rmock := redismock.NewClientMock()
+		rdb := redis.NewWithClient(client)
+		repo := repositories.New(nil, rdb)
+		svc := New(cfg, repo, nil)
+
+		rmock.ExpectGet("auth:session:" + sessionID).RedisNil()
+
+		_, err := svc.Authenticate(context.Background(), tokenPair.AccessToken)
+		if !errors.Is(err, constants.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken on missing session, got: %v", err)
+		}
+	})
+
+	t.Run("empty or invalid token", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+		_, err := svc.Authenticate(context.Background(), "")
+		if !errors.Is(err, constants.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken on empty token, got: %v", err)
+		}
+
+		_, err = svc.Authenticate(context.Background(), "malformed.jwt.token")
+		if !errors.Is(err, constants.ErrInvalidToken) {
+			t.Fatalf("expected ErrInvalidToken on malformed token, got: %v", err)
+		}
+	})
+}
+
 

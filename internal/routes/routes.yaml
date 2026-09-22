@@ -1,0 +1,7 @@
+# Route configuration for Task Management Core API
+# Maps HTTP endpoints directly to Server methods
+routes:
+  # Health check endpoint
+  - method: GET
+    path: /v1/health
+    handler: HealthCheck

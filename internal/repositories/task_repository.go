@@ -37,3 +37,20 @@ func (r *Repositories) FindTaskByID(ctx context.Context, id uuid.UUID) (*models.
 	}
 	return &task, nil
 }
+
+// DeleteTaskWithLog soft-deletes a task by ID and inserts an audit log within a single database transaction.
+func (r *Repositories) DeleteTaskWithLog(ctx context.Context, id uuid.UUID, log *models.TaskLog) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(&models.Task{}, "id = ?", id).Error; err != nil {
+			return err
+		}
+		if log != nil {
+			log.TaskID = id
+			if err := tx.Create(log).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+

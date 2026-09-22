@@ -69,4 +69,25 @@ func (c *Controllers) GetTaskByID(ctx *gin.Context) {
 	})
 }
 
+// DeleteTask handles soft-deleting a single task by its UUID.
+func (c *Controllers) DeleteTask(ctx *gin.Context) {
+	taskID, err := validations.ValidateTaskID(ctx.Param("id"))
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	if err := c.svc.DeleteTask(ctx.Request.Context(), taskID); err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.BaseResponse{
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Task deleted successfully",
+		Timestamp: time.Now(),
+	})
+}
+
 

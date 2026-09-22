@@ -8,13 +8,33 @@ import (
 	"syscall"
 	"time"
 
+	"task-management/internal/adapters/database"
 	"task-management/internal/config"
+	"task-management/internal/controllers"
 	"task-management/internal/routes"
 )
 
 func main() {
 	cfg := config.Load()
-	router := routes.NewRouter(cfg)
+
+	// Initialize database adapter
+	db, err := database.NewPostgres(cfg)
+	if err != nil {
+		if cfg.AppEnv == "production" {
+			log.Fatalf("failed to connect to postgres: %v", err)
+		}
+		log.Printf("[WARN] postgres connection failed: %v", err)
+	} else {
+		log.Println("postgres adapter connected successfully")
+		defer func() {
+			if err := db.Close(); err != nil {
+				log.Printf("error closing postgres connection: %v", err)
+			}
+		}()
+	}
+
+	ctrls := controllers.New(cfg, db)
+	router := routes.NewRouter(cfg, ctrls)
 
 	httpServer := &http.Server{
 		Addr:              ":" + cfg.HTTPPort,

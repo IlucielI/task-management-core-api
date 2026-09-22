@@ -26,7 +26,7 @@ type routeConfig struct {
 	Routes []routeItem `yaml:"routes"`
 }
 
-func NewRouter(cfg config.Config) *gin.Engine {
+func NewRouter(cfg config.Config, ctrls *controllers.Controllers) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -35,7 +35,9 @@ func NewRouter(cfg config.Config) *gin.Engine {
 	router.Use(gin.Recovery(), gin.Logger())
 
 	// Central controllers container
-	ctrls := controllers.New(cfg)
+	if ctrls == nil {
+		ctrls = controllers.New(cfg, nil)
+	}
 	ctrlsVal := reflect.ValueOf(ctrls)
 
 	// Load and parse embedded YAML routes

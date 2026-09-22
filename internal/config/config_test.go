@@ -52,6 +52,24 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.RedisDialTimeout != 5*time.Second {
 		t.Errorf("expected RedisDialTimeout 5s, got %v", cfg.RedisDialTimeout)
 	}
+	if cfg.S3Endpoint != "localhost:9000" {
+		t.Errorf("expected S3Endpoint 'localhost:9000', got %q", cfg.S3Endpoint)
+	}
+	if cfg.S3AccessKey != "minioadmin" {
+		t.Errorf("expected S3AccessKey 'minioadmin', got %q", cfg.S3AccessKey)
+	}
+	if cfg.S3SecretKey != "minioadmin" {
+		t.Errorf("expected S3SecretKey 'minioadmin', got %q", cfg.S3SecretKey)
+	}
+	if cfg.S3BucketName != "task-management" {
+		t.Errorf("expected S3BucketName 'task-management', got %q", cfg.S3BucketName)
+	}
+	if cfg.S3UseSSL != false {
+		t.Errorf("expected S3UseSSL false, got %v", cfg.S3UseSSL)
+	}
+	if cfg.S3ForcePathStyle != true {
+		t.Errorf("expected S3ForcePathStyle true, got %v", cfg.S3ForcePathStyle)
+	}
 }
 
 func TestConfig_CustomEnv(t *testing.T) {
@@ -177,5 +195,39 @@ func TestConfig_RedisAddr(t *testing.T) {
 
 	if got != expected {
 		t.Errorf("expected RedisAddr %q, got %q", expected, got)
+	}
+}
+
+func TestConfig_LoadS3Env(t *testing.T) {
+	t.Setenv("S3_ENDPOINT", "s3.amazonaws.com")
+	t.Setenv("S3_ACCESS_KEY", "custom-key")
+	t.Setenv("S3_SECRET_KEY", "custom-secret")
+	t.Setenv("S3_BUCKET_NAME", "custom-bucket")
+	t.Setenv("S3_REGION", "ap-southeast-1")
+	t.Setenv("S3_USE_SSL", "true")
+	t.Setenv("S3_FORCE_PATH_STYLE", "false")
+
+	cfg := config.Load()
+
+	if cfg.S3Endpoint != "s3.amazonaws.com" {
+		t.Errorf("expected S3Endpoint 's3.amazonaws.com', got %q", cfg.S3Endpoint)
+	}
+	if cfg.S3AccessKey != "custom-key" {
+		t.Errorf("expected S3AccessKey 'custom-key', got %q", cfg.S3AccessKey)
+	}
+	if cfg.S3SecretKey != "custom-secret" {
+		t.Errorf("expected S3SecretKey 'custom-secret', got %q", cfg.S3SecretKey)
+	}
+	if cfg.S3BucketName != "custom-bucket" {
+		t.Errorf("expected S3BucketName 'custom-bucket', got %q", cfg.S3BucketName)
+	}
+	if cfg.S3Region != "ap-southeast-1" {
+		t.Errorf("expected S3Region 'ap-southeast-1', got %q", cfg.S3Region)
+	}
+	if cfg.S3UseSSL != true {
+		t.Errorf("expected S3UseSSL true, got %v", cfg.S3UseSSL)
+	}
+	if cfg.S3ForcePathStyle != false {
+		t.Errorf("expected S3ForcePathStyle false, got %v", cfg.S3ForcePathStyle)
 	}
 }

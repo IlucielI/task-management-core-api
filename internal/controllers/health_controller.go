@@ -35,6 +35,17 @@ func (c *Controllers) HealthCheck(ctx *gin.Context) {
 		}
 	}
 
+	s3Status := constants.IntegrationStatusConnected
+	if c.storage == nil {
+		s3Status = constants.IntegrationStatusDisconnected
+	} else {
+		pingCtx, cancel := context.WithTimeout(ctx.Request.Context(), 2*time.Second)
+		defer cancel()
+		if err := c.storage.Ping(pingCtx); err != nil {
+			s3Status = constants.IntegrationStatusDisconnected
+		}
+	}
+
 	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.HealthData]{
 		Success: true,
 		Code:    constants.ResponseCodeSuccess,
@@ -46,6 +57,7 @@ func (c *Controllers) HealthCheck(ctx *gin.Context) {
 			Services: dtos.HealthServices{
 				Database: dbStatus,
 				Redis:    redisStatus,
+				S3:       s3Status,
 			},
 		},
 	})

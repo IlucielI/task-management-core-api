@@ -4,11 +4,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"task-management/internal/constants"
 )
 
-// TeamFilterQuery contains URL query parameters for filtering teams.
-type TeamFilterQuery struct {
-	Name string `form:"name"`
+// ListTeamsQuery contains URL query parameters for filtering, sorting, and paginating teams.
+type ListTeamsQuery struct {
+	Page    int                 `form:"page"`
+	Limit   int                 `form:"limit"`
+	Name    string              `form:"name"`
+	OrderBy constants.SortOrder `form:"order_by"`
+}
+
+// ListTeamsData represents the paginated team list payload containing items and pagination metadata.
+type ListTeamsData struct {
+	Items    []TeamResponse `json:"items"`
+	Metadata ListMetadata   `json:"metadata"`
 }
 
 // TeamResponse represents the response payload for a team.

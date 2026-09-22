@@ -104,8 +104,12 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 	rows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
 		AddRow(teamID, "Engineering", now, now)
 
-	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE $1 ORDER BY name ASC`)).
-		WithArgs("%engineering%").
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "teams" WHERE LOWER(name) LIKE LOWER($1)`)).
+		WithArgs("%Engineering%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE LOWER(name) LIKE LOWER($1) ORDER BY name ASC LIMIT $2`)).
+		WithArgs("%Engineering%", 10).
 		WillReturnRows(rows)
 
 	w := httptest.NewRecorder()
@@ -120,7 +124,7 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", w.Code)
 	}
 
-	var resp dtos.APIResponse[[]dtos.TeamResponse]
+	var resp dtos.APIResponse[dtos.ListTeamsData]
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
@@ -128,7 +132,10 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success envelope response, got: %+v", resp)
 	}
-	if len(resp.Data) != 1 || resp.Data[0].Name != "Engineering" {
-		t.Fatalf("unexpected data: %+v", resp.Data)
+	if len(resp.Data.Items) != 1 || resp.Data.Items[0].Name != "Engineering" {
+		t.Fatalf("unexpected items: %+v", resp.Data.Items)
+	}
+	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Page != 1 {
+		t.Fatalf("unexpected metadata: %+v", resp.Data.Metadata)
 	}
 }

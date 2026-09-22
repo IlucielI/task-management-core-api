@@ -15,6 +15,7 @@ import (
 
 	redisAdapter "task-management/internal/adapters/redis"
 	"task-management/internal/config"
+	"task-management/internal/constants"
 	"task-management/internal/controllers"
 	"task-management/internal/dtos"
 	"task-management/internal/models"
@@ -309,6 +310,90 @@ func TestRouter_ListTasks_Success(t *testing.T) {
 	}
 	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Limit != 10 || resp.Data.Metadata.Page != 2 || resp.Data.Metadata.TotalPages != 1 {
 		t.Fatalf("unexpected metadata: %+v", resp.Data.Metadata)
+	}
+}
+
+func TestRouter_UpdateTask_RequiresAuth(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	taskID := uuid.New()
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader([]byte(`{"title":"New"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 Unauthorized when missing token, got %d", w.Code)
+	}
+}
+
+func TestRouter_UpdateTask_Success(t *testing.T) {
+	cfg := config.Load()
+	cfg.JWTSecret = "test-secret-key-that-is-long-enough-32bytes"
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
+	router := routes.NewRouter(cfg, ctrls, svc)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	taskID := uuid.New()
+	logID := uuid.New()
+
+	user := &models.User{
+		ID:     userID,
+		Email:  "user@example.com",
+		TeamID: teamID,
+	}
+	tokenPair, err := jwt.GenerateTokenPair(cfg, user, "test-session-id")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	version := 1
+	taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "version"}).
+		AddRow(taskID, "Old Task", "Desc", "todo", userID, teamID, version)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(taskRows)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+	mock.ExpectCommit()
+
+	newTitle := "Updated Task Title"
+	newStatus := constants.TaskStatusInProgress
+	reqBody := dtos.UpdateTaskRequest{
+		Version: &version,
+		Title:   &newTitle,
+		Status:  &newStatus,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader(bodyBytes))
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.TaskResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || resp.Data == nil || resp.Data.Title != newTitle || resp.Data.Status != newStatus || resp.Data.Version != 2 {
+		t.Fatalf("unexpected response data: %+v", resp.Data)
 	}
 }
 

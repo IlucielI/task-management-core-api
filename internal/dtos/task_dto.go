@@ -14,6 +14,15 @@ type CreateTaskRequest struct {
 	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
 }
 
+// UpdateTaskRequest defines payload for updating an existing task.
+type UpdateTaskRequest struct {
+	Version     *int       `json:"version"`
+	Title       *string    `json:"title,omitempty"`
+	Description *string    `json:"description,omitempty"`
+	Status      *string    `json:"status,omitempty"`
+	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
+}
+
 // TaskResponse represents formatted task entity returned to API clients.
 type TaskResponse struct {
 	ID          uuid.UUID  `json:"id"`
@@ -23,6 +32,7 @@ type TaskResponse struct {
 	CreatorID   uuid.UUID  `json:"creator_id"`
 	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
 	TeamID      uuid.UUID  `json:"team_id"`
+	Version     int        `json:"version"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }

@@ -806,3 +806,362 @@ func TestService_ListTasks(t *testing.T) {
 	})
 }
 
+func TestService_UpdateTask(t *testing.T) {
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	assigneeID := uuid.New()
+	newAssigneeID := uuid.New()
+	teamID := uuid.New()
+	otherTeamID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+
+	cfg := config.Config{}
+
+	newTitle := "Updated Task Title"
+	newDesc := "Updated Task Description"
+	newStatus := constants.TaskStatusInProgress
+
+	version := 1
+	staleVersion := 2
+
+	t.Run("success_update_all_fields", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		// 1. Find task
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Old Title", "Old Desc", "todo", creatorID, &assigneeID, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		// 2. Find new assignee in same team
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(newAssigneeID, "New Assignee", "assignee@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+			WithArgs(newAssigneeID, 1).
+			WillReturnRows(assigneeRows)
+
+		// 3. Update task and insert log in transaction
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+		mock.ExpectCommit()
+
+		req := dtos.UpdateTaskRequest{
+			Version:     &version,
+			Title:       &newTitle,
+			Description: &newDesc,
+			Status:      &newStatus,
+			AssigneeID:  &newAssigneeID,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.ID != taskID || resp.Title != newTitle || resp.Status != newStatus || *resp.AssigneeID != newAssigneeID || resp.Version != 2 {
+			t.Fatalf("unexpected updated task response: %+v", resp)
+		}
+	})
+
+	t.Run("stale_task_version_conflict", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		// Task in DB is at version 2
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, staleVersion, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		// Client sends update with stale version 1
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Title:   &newTitle,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrStaleVersion) {
+			t.Fatalf("expected ErrStaleVersion, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response on conflict, got: %+v", resp)
+		}
+	})
+
+	t.Run("success_status_only_update", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+		mock.ExpectCommit()
+
+		status := constants.TaskStatusDone
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Status:  &status,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.Status != constants.TaskStatusDone || resp.Version != 2 {
+			t.Fatalf("unexpected task response: %+v", resp)
+		}
+	})
+
+	t.Run("success_assignee_only_update", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(newAssigneeID, "Assignee", "assignee@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+			WithArgs(newAssigneeID, 1).
+			WillReturnRows(assigneeRows)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+		mock.ExpectCommit()
+
+		req := dtos.UpdateTaskRequest{
+			Version:    &version,
+			AssigneeID: &newAssigneeID,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || *resp.AssigneeID != newAssigneeID || resp.Version != 2 {
+			t.Fatalf("unexpected task response: %+v", resp)
+		}
+	})
+
+	t.Run("task_not_found_in_db", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Title:   &newTitle,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("cross_team_task_isolation", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, otherTeamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Title:   &newTitle,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound on cross-team update, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("unauthorized_missing_auth_user", func(t *testing.T) {
+		gormDB, _ := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Title:   &newTitle,
+		}
+
+		resp, err := svc.UpdateTask(context.Background(), taskID, req)
+		if err == nil {
+			t.Fatal("expected error on missing auth user, got nil")
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("assignee_not_found_or_different_team", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		// Assignee in other team
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(newAssigneeID, "Foreign Assignee", "foreign@example.com", otherTeamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+			WithArgs(newAssigneeID, 1).
+			WillReturnRows(assigneeRows)
+
+		req := dtos.UpdateTaskRequest{
+			Version:    &version,
+			AssigneeID: &newAssigneeID,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrAssigneeNotInTeam) {
+			t.Fatalf("expected ErrAssigneeNotInTeam, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("db_find_task_error", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnError(errors.New("db find error"))
+
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Title:   &newTitle,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if err == nil {
+			t.Fatal("expected error on find failure, got nil")
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("db_update_task_error", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+			WillReturnError(errors.New("db save error"))
+		mock.ExpectRollback()
+
+		req := dtos.UpdateTaskRequest{
+			Version: &version,
+			Title:   &newTitle,
+		}
+
+		resp, err := svc.UpdateTask(ctx, taskID, req)
+		if err == nil {
+			t.Fatal("expected error on update failure, got nil")
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+}
+

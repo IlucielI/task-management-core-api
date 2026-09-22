@@ -36,6 +36,11 @@ routes:
     handler: GetTaskByID
     auth: true
 
+  - method: PUT
+    path: /v1/tasks/:id
+    handler: UpdateTask
+    auth: true
+
   - method: DELETE
     path: /v1/tasks/:id
     handler: DeleteTask

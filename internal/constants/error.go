@@ -42,6 +42,9 @@ var (
 
 	// ErrInternalServerError is returned when an unexpected system error occurs.
 	ErrInternalServerError = apperror.New(http.StatusInternalServerError, ResponseCodeInternalError, "internal server error")
+
+	// ErrStaleVersion is returned when an update encounters an optimistic locking version conflict.
+	ErrStaleVersion = apperror.New(http.StatusConflict, ResponseCodeConflict, "stale resource version")
 )
 
 

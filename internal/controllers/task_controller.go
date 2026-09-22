@@ -118,4 +118,38 @@ func (c *Controllers) ListTasks(ctx *gin.Context) {
 	})
 }
 
+// UpdateTask handles updating an existing task by its UUID.
+func (c *Controllers) UpdateTask(ctx *gin.Context) {
+	taskID, err := validations.ValidateTaskID(ctx.Param("id"))
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	var req dtos.UpdateTaskRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	if err := validations.ValidateUpdateTaskRequest(req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	task, err := c.svc.UpdateTask(ctx.Request.Context(), taskID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.TaskResponse]{
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Task updated successfully",
+		Data:      task,
+		Timestamp: time.Now(),
+	})
+}
+
 

@@ -16,6 +16,7 @@ type Task struct {
 	CreatorID   uuid.UUID      `gorm:"type:uuid;not null;index" json:"creator_id"`
 	AssigneeID  *uuid.UUID     `gorm:"type:uuid;index" json:"assignee_id,omitempty"`
 	TeamID      uuid.UUID      `gorm:"type:uuid;not null;index" json:"team_id"`
+	Version     int            `gorm:"type:int;not null;default:1" json:"version"`
 	CreatedAt   time.Time      `gorm:"not null;default:now()" json:"created_at"`
 	UpdatedAt   time.Time      `gorm:"not null;default:now()" json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`

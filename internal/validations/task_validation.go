@@ -39,6 +39,50 @@ func ValidateCreateTaskRequest(req dtos.CreateTaskRequest) error {
 	)
 }
 
+// ValidateUpdateTaskRequest validates the task update payload.
+func ValidateUpdateTaskRequest(req dtos.UpdateTaskRequest) error {
+	if req.Version == nil {
+		return validation.NewError("validation_required", "version is required")
+	}
+	if *req.Version < 1 {
+		return validation.NewError("validation_invalid", "version must be at least 1")
+	}
+
+	if req.Title == nil && req.Description == nil && req.Status == nil && req.AssigneeID == nil {
+		return validation.NewError("validation_invalid", "at least one field must be provided for update")
+	}
+
+	return validation.ValidateStruct(&req,
+		validation.Field(&req.Title, validation.By(func(value interface{}) error {
+			if ptr, ok := value.(*string); ok && ptr != nil {
+				trimmed := strings.TrimSpace(*ptr)
+				if trimmed == "" {
+					return validation.NewError("validation_invalid", "title cannot be empty")
+				}
+				if len(trimmed) > 255 {
+					return validation.NewError("validation_invalid", "title must be between 1 and 255 characters")
+				}
+			}
+			return nil
+		})),
+		validation.Field(&req.Status, validation.By(func(value interface{}) error {
+			if ptr, ok := value.(*string); ok && ptr != nil {
+				trimmed := strings.TrimSpace(*ptr)
+				return validation.Validate(trimmed, validation.In(validTaskStatuses...).Error("status must be a valid task status"))
+			}
+			return nil
+		})),
+		validation.Field(&req.AssigneeID, validation.By(func(value interface{}) error {
+			if ptr, ok := value.(*uuid.UUID); ok && ptr != nil {
+				if *ptr == uuid.Nil {
+					return validation.NewError("validation_invalid", "assignee_id cannot be nil UUID")
+				}
+			}
+			return nil
+		})),
+	)
+}
+
 // ValidateTaskID validates that the path parameter is a valid non-nil UUID and returns the parsed UUID.
 func ValidateTaskID(idStr string) (uuid.UUID, error) {
 	trimmed := strings.TrimSpace(idStr)

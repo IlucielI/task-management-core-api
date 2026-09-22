@@ -104,6 +104,7 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 		CreatorID:   authUser.UserID,
 		AssigneeID:  req.AssigneeID,
 		TeamID:      authUser.TeamID,
+		Version:     1,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -134,6 +135,7 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 		CreatorID:   task.CreatorID,
 		AssigneeID:  task.AssigneeID,
 		TeamID:      task.TeamID,
+		Version:     task.Version,
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
 	}
@@ -175,6 +177,7 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 		CreatorID:   task.CreatorID,
 		AssigneeID:  task.AssigneeID,
 		TeamID:      task.TeamID,
+		Version:     task.Version,
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
 	}, nil
@@ -263,6 +266,7 @@ func (s *Service) ListTasks(ctx context.Context, query dtos.ListTasksQuery) (*dt
 			CreatorID:   task.CreatorID,
 			AssigneeID:  task.AssigneeID,
 			TeamID:      task.TeamID,
+			Version:     task.Version,
 			CreatedAt:   task.CreatedAt,
 			UpdatedAt:   task.UpdatedAt,
 		}
@@ -276,5 +280,124 @@ func (s *Service) ListTasks(ctx context.Context, query dtos.ListTasksQuery) (*dt
 			Page:       query.Page,
 			TotalPages: totalPages,
 		},
+	}, nil
+}
+
+// UpdateTask updates an existing task, enforces multi-tenant team boundaries, and records an audit log in a single transaction.
+func (s *Service) UpdateTask(ctx context.Context, taskID uuid.UUID, req dtos.UpdateTaskRequest) (*dtos.TaskResponse, error) {
+	authUser, err := s.getAuthUser(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	task, err := s.repo.FindTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to find task: %w", err))
+	}
+	if task == nil || task.TeamID != authUser.TeamID {
+		return nil, constants.ErrTaskNotFound
+	}
+
+	// Optimistic locking: verify task version has not changed
+	if req.Version == nil || task.Version != *req.Version {
+		return nil, constants.ErrStaleVersion
+	}
+
+	// Multi-tenancy check: If AssigneeID is updated and non-nil, assignee must exist and belong to the same team
+	if req.AssigneeID != nil {
+		assignee, err := s.repo.FindUserByID(ctx, *req.AssigneeID)
+		if err != nil {
+			return nil, s.wrapError(ctx, fmt.Errorf("failed to check assignee: %w", err))
+		}
+		if assignee == nil || assignee.TeamID != authUser.TeamID {
+			return nil, constants.ErrAssigneeNotInTeam
+		}
+	}
+
+	// Track changes for audit log
+	oldStatus := task.Status
+	oldAssigneeID := task.AssigneeID
+
+	statusChanged := false
+	if req.Status != nil {
+		cleanStatus := strings.TrimSpace(*req.Status)
+		if cleanStatus != "" && cleanStatus != task.Status {
+			statusChanged = true
+			task.Status = cleanStatus
+		}
+	}
+
+	assigneeChanged := false
+	if req.AssigneeID != nil {
+		if task.AssigneeID == nil || *task.AssigneeID != *req.AssigneeID {
+			assigneeChanged = true
+			task.AssigneeID = req.AssigneeID
+		}
+	}
+
+	detailsChanged := false
+	if req.Title != nil {
+		cleanTitle := strings.TrimSpace(*req.Title)
+		if cleanTitle != "" && cleanTitle != task.Title {
+			detailsChanged = true
+			task.Title = cleanTitle
+		}
+	}
+	if req.Description != nil {
+		cleanDesc := strings.TrimSpace(*req.Description)
+		if cleanDesc != task.Description {
+			detailsChanged = true
+			task.Description = cleanDesc
+		}
+	}
+
+	expectedVersion := *req.Version
+	now := time.Now()
+	task.UpdatedAt = now
+	task.Version = expectedVersion + 1
+
+	// Determine audit log action
+	action := constants.TaskActionUpdate
+	if statusChanged && !assigneeChanged && !detailsChanged {
+		action = constants.TaskActionStatusUpdate
+	} else if assigneeChanged && !statusChanged && !detailsChanged {
+		action = constants.TaskActionAssign
+	}
+
+	notes := "Task updated"
+	log := &models.TaskLog{
+		ID:        uuid.New(),
+		TaskID:    task.ID,
+		Action:    action,
+		ActorID:   &authUser.UserID,
+		Notes:     &notes,
+		Metadata:  models.JSONMap{"source": "api"},
+		CreatedAt: now,
+	}
+
+	if statusChanged {
+		log.FromStatus = &oldStatus
+		log.ToStatus = &task.Status
+	}
+	if assigneeChanged {
+		log.FromAssigneeID = oldAssigneeID
+		log.ToAssigneeID = task.AssigneeID
+	}
+
+	if err := s.repo.UpdateTaskWithLog(ctx, task, expectedVersion, log); err != nil {
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to update task: %w", err))
+	}
+
+	return &dtos.TaskResponse{
+		ID:          task.ID,
+		Title:       task.Title,
+		Description: task.Description,
+		Status:      task.Status,
+		CreatorID:   task.CreatorID,
+		AssigneeID:  task.AssigneeID,
+		TeamID:      task.TeamID,
+		Version:     task.Version,
+		CreatedAt:   task.CreatedAt,
+		UpdatedAt:   task.UpdatedAt,
 	}, nil
 }

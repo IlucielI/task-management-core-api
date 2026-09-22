@@ -10,6 +10,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/google/uuid"
 
+	"task-management/internal/constants"
 	"task-management/internal/models"
 )
 
@@ -314,6 +315,95 @@ func TestRepositories_FindTasks(t *testing.T) {
 			t.Fatalf("expected nil tasks and 0 total, got tasks=%v total=%d", tasks, total)
 		}
 	})
+}
+
+func TestRepositories_UpdateTaskWithLog(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+
+	task := &models.Task{
+		ID:          taskID,
+		Title:       "Updated Task Title",
+		Description: "Updated Description",
+		Status:      "in_progress",
+		CreatorID:   creatorID,
+		TeamID:      teamID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	log := &models.TaskLog{
+		ID:        logID,
+		Action:    "UPDATE",
+		CreatedAt: now,
+	}
+
+	// 1. Success update with log
+	task.Version = 2
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+	mock.ExpectCommit()
+
+	err := repo.UpdateTaskWithLog(context.Background(), task, 1, log)
+	if err != nil {
+		t.Fatalf("unexpected error updating task with log: %v", err)
+	}
+
+	// 2. Success update without log
+	task.Version = 3
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err = repo.UpdateTaskWithLog(context.Background(), task, 2, nil)
+	if err != nil {
+		t.Fatalf("unexpected error updating task without log: %v", err)
+	}
+
+	// 3. Stale version (0 rows affected) -> returns ErrStaleVersion
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+
+	err = repo.UpdateTaskWithLog(context.Background(), task, 2, log)
+	if !errors.Is(err, constants.ErrStaleVersion) {
+		t.Fatalf("expected ErrStaleVersion, got: %v", err)
+	}
+
+	// 4. Task update error rolls back
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnError(errors.New("db update error"))
+	mock.ExpectRollback()
+
+	err = repo.UpdateTaskWithLog(context.Background(), task, 3, log)
+	if err == nil {
+		t.Fatal("expected error on task update failure, got nil")
+	}
+
+	// 5. Log create error rolls back
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnError(errors.New("db log create error"))
+	mock.ExpectRollback()
+
+	err = repo.UpdateTaskWithLog(context.Background(), task, 3, log)
+	if err == nil {
+		t.Fatal("expected error on log create failure, got nil")
+	}
 }
 
 

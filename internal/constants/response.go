@@ -8,6 +8,7 @@ const (
 	ResponseCodeBadRequest    = "BAD_REQUEST"
 	ResponseCodeUnauthorized  = "UNAUTHORIZED"
 	ResponseCodeForbidden     = "FORBIDDEN"
+	ResponseCodeConflict      = "CONFLICT"
 )
 
 const (

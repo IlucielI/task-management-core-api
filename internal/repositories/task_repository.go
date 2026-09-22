@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"task-management/internal/constants"
 	"task-management/internal/models"
 )
 
@@ -46,6 +47,30 @@ func (r *Repositories) DeleteTaskWithLog(ctx context.Context, id uuid.UUID, log 
 		}
 		if log != nil {
 			log.TaskID = id
+			if err := tx.Create(log).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// UpdateTaskWithLog updates an existing task with optimistic locking and inserts an audit log within a single database transaction.
+func (r *Repositories) UpdateTaskWithLog(ctx context.Context, task *models.Task, expectedVersion int, log *models.TaskLog) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&models.Task{}).
+			Where("id = ? AND version = ?", task.ID, expectedVersion).
+			Select("Title", "Description", "Status", "AssigneeID", "Version", "UpdatedAt").
+			Updates(task)
+		if err := res.Error; err != nil {
+			return err
+		}
+		if res.RowsAffected == 0 {
+			return constants.ErrStaleVersion
+		}
+
+		if log != nil {
+			log.TaskID = task.ID
 			if err := tx.Create(log).Error; err != nil {
 				return err
 			}

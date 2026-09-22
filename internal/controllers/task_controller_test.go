@@ -714,4 +714,351 @@ func TestControllers_ListTasks_InternalError(t *testing.T) {
 	}
 }
 
+func TestControllers_UpdateTask_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+	version := 1
+
+	// 1. Task found
+	taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+		AddRow(taskID, "Old Title", "Old Desc", "todo", creatorID, nil, teamID, version, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(taskRows)
+
+	// 2. Update task & log
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+	mock.ExpectCommit()
+
+	newTitle := "Brand New Title"
+	newStatus := constants.TaskStatusInProgress
+	reqBody := dtos.UpdateTaskRequest{
+		Version: &version,
+		Title:   &newTitle,
+		Status:  &newStatus,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d. Body: %s", w.Code, w.Body.String())
+	}
+	var resp dtos.APIResponse[*dtos.TaskResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+		t.Fatalf("expected success response, got: %+v", resp)
+	}
+	if resp.Data == nil || resp.Data.Title != newTitle || resp.Data.Status != newStatus || resp.Data.Version != 2 {
+		t.Fatalf("unexpected task data: %+v", resp.Data)
+	}
+}
+
+func TestControllers_UpdateTask_StaleVersionConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+	serverVersion := 2
+	clientVersion := 1
+
+	taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+		AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, serverVersion, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(taskRows)
+
+	newTitle := "New Title"
+	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
+		Version: &clientVersion,
+		Title:   &newTitle,
+	})
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected status 409 Conflict, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeConflict || resp.Message != constants.ErrStaleVersion.Error() {
+		t.Fatalf("expected conflict code and stale version message, got: %+v", resp)
+	}
+}
+
+func TestControllers_UpdateTask_InvalidTaskID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctrls := New(config.Config{}, nil)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: "invalid-uuid"}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/invalid-uuid", bytes.NewReader([]byte(`{"version":1,"title":"New"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeBadRequest {
+		t.Fatalf("expected BAD_REQUEST code, got %s", resp.Code)
+	}
+}
+
+func TestControllers_UpdateTask_InvalidJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctrls := New(config.Config{}, nil)
+	taskID := uuid.New()
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader([]byte(`invalid-json`)))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+}
+
+func TestControllers_UpdateTask_ValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctrls := New(config.Config{}, nil)
+	taskID := uuid.New()
+
+	// Empty request (missing version)
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeBadRequest {
+		t.Fatalf("expected BAD_REQUEST code, got %s", resp.Code)
+	}
+}
+
+func TestControllers_UpdateTask_NotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	version := 1
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
+
+	newTitle := "New Title"
+	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
+		Version: &version,
+		Title:   &newTitle,
+	})
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeNotFound {
+		t.Fatalf("expected NOT_FOUND code, got %s", resp.Code)
+	}
+}
+
+func TestControllers_UpdateTask_AssigneeNotInTeam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	foreignTeamID := uuid.New()
+	foreignAssigneeID := uuid.New()
+	now := time.Now()
+	version := 1
+
+	taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+		AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(taskRows)
+
+	assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+		AddRow(foreignAssigneeID, "Foreign", "foreign@example.com", foreignTeamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs(foreignAssigneeID, 1).
+		WillReturnRows(assigneeRows)
+
+	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
+		Version:    &version,
+		AssigneeID: &foreignAssigneeID,
+	})
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 on assignee not in team, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeBadRequest || resp.Message != constants.ErrAssigneeNotInTeam.Error() {
+		t.Fatalf("expected assignee not in team error, got: %+v", resp)
+	}
+}
+
+func TestControllers_UpdateTask_InternalError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	version := 1
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnError(errors.New("db connection crashed"))
+
+	newTitle := "New Title"
+	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
+		Version: &version,
+		Title:   &newTitle,
+	})
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
+	req := httptest.NewRequest(http.MethodPut, "/v1/tasks/"+taskID.String(), bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.UpdateTask(ctx)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeInternalError {
+		t.Fatalf("expected INTERNAL_ERROR code, got %s", resp.Code)
+	}
+}
+
 

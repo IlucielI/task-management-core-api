@@ -24,5 +24,6 @@ func (c *Controllers) HealthCheck(ctx *gin.Context) {
 			Uptime:   time.Since(c.startedAt).String(),
 			Services: servicesStatus,
 		},
+		Timestamp: time.Now(),
 	})
 }

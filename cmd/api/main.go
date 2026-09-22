@@ -10,6 +10,7 @@ import (
 
 	"task-management/internal/adapters/database"
 	"task-management/internal/adapters/redis"
+	"task-management/internal/adapters/s3"
 	"task-management/internal/config"
 	"task-management/internal/controllers"
 	"task-management/internal/routes"
@@ -50,7 +51,18 @@ func main() {
 		}()
 	}
 
-	ctrls := controllers.New(cfg, db, rdb)
+	// Initialize s3 storage adapter
+	storage, err := s3.New(cfg)
+	if err != nil {
+		if cfg.AppEnv == "production" {
+			log.Fatalf("failed to connect to s3: %v", err)
+		}
+		log.Printf("[WARN] s3 connection failed: %v", err)
+	} else {
+		log.Println("s3 adapter connected successfully")
+	}
+
+	ctrls := controllers.New(cfg, db, rdb, storage)
 	router := routes.NewRouter(cfg, ctrls)
 
 	httpServer := &http.Server{

@@ -4,6 +4,7 @@ package dtos
 type HealthServices struct {
 	Database string `json:"database"`
 	Redis    string `json:"redis"`
+	S3       string `json:"s3"`
 }
 
 // HealthData contains runtime health check details.

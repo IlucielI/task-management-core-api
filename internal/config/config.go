@@ -35,6 +35,15 @@ type Config struct {
 	RedisDialTimeout  time.Duration
 	RedisReadTimeout  time.Duration
 	RedisWriteTimeout time.Duration
+
+	// S3 Configuration
+	S3Endpoint       string
+	S3AccessKey      string
+	S3SecretKey      string
+	S3BucketName     string
+	S3Region         string
+	S3UseSSL         bool
+	S3ForcePathStyle bool
 }
 
 func Load() Config {
@@ -66,6 +75,15 @@ func Load() Config {
 		RedisDialTimeout:  getEnvDuration("REDIS_DIAL_TIMEOUT", 5*time.Second),
 		RedisReadTimeout:  getEnvDuration("REDIS_READ_TIMEOUT", 3*time.Second),
 		RedisWriteTimeout: getEnvDuration("REDIS_WRITE_TIMEOUT", 3*time.Second),
+
+		// S3 settings (S3_* with MINIO_ROOT_* fallback for direct env_file compatibility)
+		S3Endpoint:       getEnv("S3_ENDPOINT", "localhost:9000"),
+		S3AccessKey:      getEnvWithFallback("S3_ACCESS_KEY", "MINIO_ROOT_USER", "minioadmin"),
+		S3SecretKey:      getEnvWithFallback("S3_SECRET_KEY", "MINIO_ROOT_PASSWORD", "minioadmin"),
+		S3BucketName:     getEnv("S3_BUCKET_NAME", "task-management"),
+		S3Region:         getEnv("S3_REGION", "us-east-1"),
+		S3UseSSL:         getEnvBool("S3_USE_SSL", false),
+		S3ForcePathStyle: getEnvBool("S3_FORCE_PATH_STYLE", true),
 	}
 }
 
@@ -117,6 +135,18 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	val, err := time.ParseDuration(valStr)
+	if err != nil {
+		return fallback
+	}
+	return val
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	valStr := os.Getenv(key)
+	if valStr == "" {
+		return fallback
+	}
+	val, err := strconv.ParseBool(valStr)
 	if err != nil {
 		return fallback
 	}

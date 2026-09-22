@@ -6,28 +6,35 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"task-management/internal/constants"
+	"task-management/internal/dtos"
 )
 
 // HealthCheck handles health status inquiries.
 func (c *Controllers) HealthCheck(ctx *gin.Context) {
-	dbStatus := "connected"
+	dbStatus := constants.IntegrationStatusConnected
 	if c.db == nil {
-		dbStatus = "disconnected"
+		dbStatus = constants.IntegrationStatusDisconnected
 	} else {
 		pingCtx, cancel := context.WithTimeout(ctx.Request.Context(), 2*time.Second)
 		defer cancel()
 		if err := c.db.Ping(pingCtx); err != nil {
-			dbStatus = "disconnected"
+			dbStatus = constants.IntegrationStatusDisconnected
 		}
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"status":   "ok",
-		"version":  c.cfg.Version,
-		"uptime":   time.Since(c.startedAt).String(),
-		"git_hash": c.cfg.GitHash,
-		"services": gin.H{
-			"database": dbStatus,
+	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.HealthData]{
+		Success: true,
+		Code:    constants.ResponseCodeSuccess,
+		Message: constants.ResponseMessageSuccess,
+		Data: dtos.HealthData{
+			Version:  c.cfg.Version,
+			GitHash:  c.cfg.GitHash,
+			Uptime:   time.Since(c.startedAt).String(),
+			Services: dtos.HealthServices{
+				Database: dbStatus,
+			},
 		},
 	})
 }

@@ -242,4 +242,74 @@ func TestRouter_DeleteTask_Success(t *testing.T) {
 	}
 }
 
+func TestRouter_ListTasks_RequiresAuth(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 Unauthorized when missing token, got %d", w.Code)
+	}
+}
+
+func TestRouter_ListTasks_Success(t *testing.T) {
+	cfg := config.Load()
+	cfg.JWTSecret = "test-secret-key-that-is-long-enough-32bytes"
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
+	router := routes.NewRouter(cfg, ctrls, svc)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	taskID := uuid.New()
+	user := &models.User{
+		ID:     userID,
+		Email:  "user@example.com",
+		TeamID: teamID,
+	}
+
+	tokenPair, err := jwt.GenerateTokenPair(cfg, user, "")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND status = $2 AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(teamID, "todo").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id"}).
+		AddRow(taskID, "E2E List Task", "Desc", "todo", userID, teamID)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND status = $2 AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $3 OFFSET $4`)).
+		WithArgs(teamID, "todo", 10, 10).
+		WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks?page=2&limit=10&status=todo", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.ListTasksData]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || len(resp.Data.Items) != 1 || resp.Data.Items[0].Title != "E2E List Task" {
+		t.Fatalf("unexpected items: %+v", resp.Data)
+	}
+	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Limit != 10 || resp.Data.Metadata.Page != 2 || resp.Data.Metadata.TotalPages != 1 {
+		t.Fatalf("unexpected metadata: %+v", resp.Data.Metadata)
+	}
+}
+
 

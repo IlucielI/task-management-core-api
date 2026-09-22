@@ -90,4 +90,32 @@ func (c *Controllers) DeleteTask(ctx *gin.Context) {
 	})
 }
 
+// ListTasks handles fetching a paginated list of tasks matching filter criteria.
+func (c *Controllers) ListTasks(ctx *gin.Context) {
+	var query dtos.ListTasksQuery
+	if err := ctx.ShouldBindQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	if err := validations.ValidateListTasksQuery(&query); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	result, err := c.svc.ListTasks(ctx.Request.Context(), query)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ListTasksData]{
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Tasks retrieved successfully",
+		Data:      result,
+		Timestamp: time.Now(),
+	})
+}
+
 

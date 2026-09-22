@@ -604,4 +604,114 @@ func TestControllers_DeleteTask_InternalError(t *testing.T) {
 	}
 }
 
+func TestControllers_ListTasks_Success(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	taskID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND status = $2 AND LOWER(title) LIKE LOWER($3) AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(teamID, "todo", "%fix%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
+		AddRow(taskID, "Fix issue", "desc", "todo", creatorID, teamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND status = $2 AND LOWER(title) LIKE LOWER($3) AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $4`)).
+		WithArgs(teamID, "todo", "%fix%", 10).
+		WillReturnRows(rows)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks?page=1&limit=10&status=todo&title=fix", nil)
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.ListTasks(ctx)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[dtos.ListTasksData]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || len(resp.Data.Items) != 1 || resp.Data.Items[0].Title != "Fix issue" {
+		t.Fatalf("unexpected items: %+v", resp.Data)
+	}
+	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Limit != 10 || resp.Data.Metadata.Page != 1 || resp.Data.Metadata.TotalPages != 1 {
+		t.Fatalf("unexpected metadata: %+v", resp.Data.Metadata)
+	}
+}
+
+func TestControllers_ListTasks_InvalidQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrls := New(config.Config{}, nil)
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/tasks?status=invalid_status", nil)
+
+	ctrls.ListTasks(ctx)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+		t.Fatalf("expected bad request response, got: %+v", resp)
+	}
+}
+
+func TestControllers_ListTasks_InternalError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
+
+	creatorID := uuid.New()
+	teamID := uuid.New()
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(teamID).
+		WillReturnError(errors.New("db error"))
+
+	w := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks", nil)
+	req = req.WithContext(ctxmeta.WithAuthUser(req.Context(), ctxmeta.AuthUser{
+		UserID: creatorID,
+		TeamID: teamID,
+	}))
+	ctx.Request = req
+
+	ctrls.ListTasks(ctx)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", w.Code)
+	}
+	var resp dtos.BaseResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Code != constants.ResponseCodeInternalError {
+		t.Fatalf("expected INTERNAL_ERROR code, got %s", resp.Code)
+	}
+}
+
 

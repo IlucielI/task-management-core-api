@@ -13,6 +13,7 @@ import (
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
 	"task-management/internal/models"
+	"task-management/internal/repositories"
 )
 
 // CreateTask handles task creation with strict 24h idempotency and concurrency locking.
@@ -213,4 +214,67 @@ func (s *Service) DeleteTask(ctx context.Context, taskID uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// ListTasks retrieves a paginated list of tasks matching filter criteria within the caller's team boundary.
+func (s *Service) ListTasks(ctx context.Context, query dtos.ListTasksQuery) (*dtos.ListTasksData, error) {
+	authUser, err := s.getAuthUser(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	// Calculate offset from Page & Limit
+	offset := (query.Page - 1) * query.Limit
+
+	// Multi-tenant boundary isolation: ensure caller cannot access another team's tasks
+	if query.TeamID != nil && *query.TeamID != authUser.TeamID {
+		return nil, constants.ErrTaskNotFound
+	}
+
+	targetTeamID := authUser.TeamID
+
+	filter := repositories.TaskFilter{
+		TeamID:     &targetTeamID,
+		CreatorID:  query.CreatorID,
+		AssigneeID: query.AssigneeID,
+		Status:     strings.TrimSpace(query.Status),
+		Title:      strings.TrimSpace(query.Title),
+		Offset:     offset,
+		Limit:      query.Limit,
+	}
+
+	tasks, total, err := s.repo.FindTasks(ctx, filter)
+	if err != nil {
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to list tasks: %w", err))
+	}
+
+	totalPages := 0
+	if total > 0 && query.Limit > 0 {
+		totalPages = int((total + int64(query.Limit) - 1) / int64(query.Limit))
+	}
+
+	items := make([]*dtos.TaskResponse, len(tasks))
+	for i, task := range tasks {
+		items[i] = &dtos.TaskResponse{
+			ID:          task.ID,
+			Title:       task.Title,
+			Description: task.Description,
+			Status:      task.Status,
+			CreatorID:   task.CreatorID,
+			AssigneeID:  task.AssigneeID,
+			TeamID:      task.TeamID,
+			CreatedAt:   task.CreatedAt,
+			UpdatedAt:   task.UpdatedAt,
+		}
+	}
+
+	return &dtos.ListTasksData{
+		Items: items,
+		Metadata: dtos.ListMetadata{
+			Count:      total,
+			Limit:      int64(query.Limit),
+			Page:       query.Page,
+			TotalPages: totalPages,
+		},
+	}, nil
 }

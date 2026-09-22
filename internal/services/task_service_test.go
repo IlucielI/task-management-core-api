@@ -634,3 +634,175 @@ func TestService_DeleteTask(t *testing.T) {
 	})
 }
 
+func TestService_ListTasks(t *testing.T) {
+	cfg := config.Config{}
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	task1ID := uuid.New()
+	task2ID := uuid.New()
+	now := time.Now()
+
+	t.Run("success_with_page_and_limit", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		query := dtos.ListTasksQuery{
+			Page:  2,
+			Limit: 2,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
+			AddRow(task1ID, "Task 3", "desc", "todo", creatorID, teamID, now, now).
+			AddRow(task2ID, "Task 4", "desc", "todo", creatorID, teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $2 OFFSET $3`)).
+			WithArgs(teamID, 2, 2).
+			WillReturnRows(rows)
+
+		resp, err := svc.ListTasks(ctx, query)
+		if err != nil {
+			t.Fatalf("unexpected error listing tasks: %v", err)
+		}
+		if resp == nil || len(resp.Items) != 2 {
+			t.Fatalf("expected 2 items, got %+v", resp)
+		}
+		if resp.Metadata.Count != 5 || resp.Metadata.Limit != 2 || resp.Metadata.Page != 2 || resp.Metadata.TotalPages != 3 {
+			t.Fatalf("unexpected metadata: %+v", resp.Metadata)
+		}
+	})
+
+	t.Run("success_with_filter_and_search", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		query := dtos.ListTasksQuery{
+			Page:   1,
+			Limit:  10,
+			Status: "in_progress",
+			Title:  "Payment",
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND status = $2 AND LOWER(title) LIKE LOWER($3) AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID, "in_progress", "%Payment%").
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
+			AddRow(task1ID, "Fix Payment Gateway", "desc", "in_progress", creatorID, teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND status = $2 AND LOWER(title) LIKE LOWER($3) AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $4`)).
+			WithArgs(teamID, "in_progress", "%Payment%", 10).
+			WillReturnRows(rows)
+
+		resp, err := svc.ListTasks(ctx, query)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || len(resp.Items) != 1 || resp.Items[0].Title != "Fix Payment Gateway" {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+	})
+
+	t.Run("unauthorized_missing_auth_user", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+
+		_, err := svc.ListTasks(context.Background(), dtos.ListTasksQuery{Page: 1, Limit: 10})
+		if !errors.Is(err, constants.ErrUnauthorized) {
+			t.Fatalf("expected ErrUnauthorized, got: %v", err)
+		}
+	})
+
+	t.Run("cross_team_query_returns_not_found", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		otherTeamID := uuid.New()
+		_, err := svc.ListTasks(ctx, dtos.ListTasksQuery{
+			Page:   1,
+			Limit:  10,
+			TeamID: &otherTeamID,
+		})
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound on cross-team query, got: %v", err)
+		}
+	})
+
+	t.Run("success_with_creator_and_assignee_filters", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		assigneeID := uuid.New()
+		query := dtos.ListTasksQuery{
+			Page:       1,
+			Limit:      10,
+			TeamID:     &teamID,
+			CreatorID:  &creatorID,
+			AssigneeID: &assigneeID,
+		}
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND creator_id = $2 AND assignee_id = $3 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID, creatorID, assigneeID).
+			WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "created_at", "updated_at"}).
+			AddRow(task1ID, "Assigned Task", "desc", "todo", creatorID, assigneeID, teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE team_id = $1 AND creator_id = $2 AND assignee_id = $3 AND "tasks"."deleted_at" IS NULL ORDER BY created_at DESC LIMIT $4`)).
+			WithArgs(teamID, creatorID, assigneeID, 10).
+			WillReturnRows(rows)
+
+		resp, err := svc.ListTasks(ctx, query)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || len(resp.Items) != 1 || *resp.Items[0].AssigneeID != assigneeID {
+			t.Fatalf("unexpected response: %+v", resp)
+		}
+	})
+
+	t.Run("db_error", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT count(*) FROM "tasks" WHERE team_id = $1 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(teamID).
+			WillReturnError(errors.New("db error"))
+
+		resp, err := svc.ListTasks(ctx, dtos.ListTasksQuery{Page: 1, Limit: 10})
+		if err == nil {
+			t.Fatal("expected error on db failure, got nil")
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got %+v", resp)
+		}
+	})
+}
+

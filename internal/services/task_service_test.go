@@ -859,7 +859,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mock.ExpectCommit()
 
 		req := dtos.UpdateTaskRequest{
-			Version:     &version,
+			Version:     version,
 			Title:       &newTitle,
 			Description: &newDesc,
 			Status:      &newStatus,
@@ -894,7 +894,7 @@ func TestService_UpdateTask(t *testing.T) {
 
 		// Client sends update with stale version 1
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -932,7 +932,7 @@ func TestService_UpdateTask(t *testing.T) {
 
 		status := constants.TaskStatusDone
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Status:  &status,
 		}
 
@@ -975,7 +975,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mock.ExpectCommit()
 
 		req := dtos.UpdateTaskRequest{
-			Version:    &version,
+			Version:    version,
 			AssigneeID: &newAssigneeID,
 		}
 
@@ -1003,7 +1003,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1033,7 +1033,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnRows(taskRows)
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1052,7 +1052,7 @@ func TestService_UpdateTask(t *testing.T) {
 		svc := New(cfg, repo, nil)
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1089,7 +1089,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnRows(assigneeRows)
 
 		req := dtos.UpdateTaskRequest{
-			Version:    &version,
+			Version:    version,
 			AssigneeID: &newAssigneeID,
 		}
 
@@ -1117,7 +1117,7 @@ func TestService_UpdateTask(t *testing.T) {
 			WillReturnError(errors.New("db find error"))
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 
@@ -1152,7 +1152,7 @@ func TestService_UpdateTask(t *testing.T) {
 		mock.ExpectRollback()
 
 		req := dtos.UpdateTaskRequest{
-			Version: &version,
+			Version: version,
 			Title:   &newTitle,
 		}
 

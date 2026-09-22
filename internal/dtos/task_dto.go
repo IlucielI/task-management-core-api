@@ -16,7 +16,7 @@ type CreateTaskRequest struct {
 
 // UpdateTaskRequest defines payload for updating an existing task.
 type UpdateTaskRequest struct {
-	Version     *int       `json:"version"`
+	Version     int        `json:"version"`
 	Title       *string    `json:"title,omitempty"`
 	Description *string    `json:"description,omitempty"`
 	Status      *string    `json:"status,omitempty"`

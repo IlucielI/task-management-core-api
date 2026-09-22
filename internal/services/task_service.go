@@ -300,7 +300,7 @@ func (s *Service) UpdateTask(ctx context.Context, taskID uuid.UUID, req dtos.Upd
 	}
 
 	// Optimistic locking: verify task version has not changed
-	if req.Version == nil || task.Version != *req.Version {
+	if task.Version != req.Version {
 		return nil, constants.ErrStaleVersion
 	}
 
@@ -352,7 +352,7 @@ func (s *Service) UpdateTask(ctx context.Context, taskID uuid.UUID, req dtos.Upd
 		}
 	}
 
-	expectedVersion := *req.Version
+	expectedVersion := req.Version
 	now := time.Now()
 	task.UpdatedAt = now
 	task.Version = expectedVersion + 1

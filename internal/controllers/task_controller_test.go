@@ -747,7 +747,7 @@ func TestControllers_UpdateTask_Success(t *testing.T) {
 	newTitle := "Brand New Title"
 	newStatus := constants.TaskStatusInProgress
 	reqBody := dtos.UpdateTaskRequest{
-		Version: &version,
+		Version: version,
 		Title:   &newTitle,
 		Status:  &newStatus,
 	}
@@ -804,7 +804,7 @@ func TestControllers_UpdateTask_StaleVersionConflict(t *testing.T) {
 
 	newTitle := "New Title"
 	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
-		Version: &clientVersion,
+		Version: clientVersion,
 		Title:   &newTitle,
 	})
 
@@ -926,7 +926,7 @@ func TestControllers_UpdateTask_NotFound(t *testing.T) {
 
 	newTitle := "New Title"
 	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
-		Version: &version,
+		Version: version,
 		Title:   &newTitle,
 	})
 
@@ -984,7 +984,7 @@ func TestControllers_UpdateTask_AssigneeNotInTeam(t *testing.T) {
 		WillReturnRows(assigneeRows)
 
 	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
-		Version:    &version,
+		Version:    version,
 		AssigneeID: &foreignAssigneeID,
 	})
 
@@ -1032,7 +1032,7 @@ func TestControllers_UpdateTask_InternalError(t *testing.T) {
 
 	newTitle := "New Title"
 	bodyBytes, _ := json.Marshal(dtos.UpdateTaskRequest{
-		Version: &version,
+		Version: version,
 		Title:   &newTitle,
 	})
 

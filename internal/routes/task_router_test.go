@@ -371,7 +371,7 @@ func TestRouter_UpdateTask_Success(t *testing.T) {
 	newTitle := "Updated Task Title"
 	newStatus := constants.TaskStatusInProgress
 	reqBody := dtos.UpdateTaskRequest{
-		Version: &version,
+		Version: version,
 		Title:   &newTitle,
 		Status:  &newStatus,
 	}

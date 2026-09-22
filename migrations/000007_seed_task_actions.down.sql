@@ -1,0 +1,1 @@
+DELETE FROM task_actions WHERE code IN ('ASSIGN', 'CREATE', 'UPDATE', 'STATUS_UPDATE', 'DELETE');

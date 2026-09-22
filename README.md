@@ -21,6 +21,8 @@ Robust, multi-tenant Task Management REST API built with Go, Gin, GORM, PostgreS
   - [Optimistic Concurrency Control](#optimistic-concurrency-control)
   - [Database Transaction & Audit Trail](#database-transaction--audit-trail)
   - [Multi-Tenant Boundary Isolation](#multi-tenant-boundary-isolation)
+  - [Structured Logging & Observability](#structured-logging--observability)
+  - [Global Panic Recovery Handler](#global-panic-recovery-handler)
 
 ---
 
@@ -39,7 +41,7 @@ The project follows Clean Architecture with strict separation of concerns and de
     ├── constants/          # Application-wide error codes, statuses, and response constants
     ├── controllers/        # HTTP handlers parsing requests and rendering JSON responses
     ├── dtos/               # Request payloads and API response definitions
-    ├── middlewares/        # HTTP middlewares (JWT Auth, Client Metadata)
+    ├── middlewares/        # HTTP middlewares (JWT Auth, Client Metadata, Structured Logger, Panic Recovery)
     ├── models/             # Domain entities mapping to database tables
     ├── pkg/                # Reusable packages (AppError, Context Metadata, Notification)
     ├── repositories/       # Data access layer interfacing with GORM & Redis
@@ -55,13 +57,14 @@ The project follows Clean Architecture with strict separation of concerns and de
 | Requirement | Implementation Details | Status |
 | :--- | :--- | :---: |
 | **Authentication** | User registration, login, dual JWT tokens (Access & Refresh) | ✅ Complete |
-| **Task CRUD** | Create, List (filter/search/pagination), Detail, Update, Delete | ✅ Complete |
+| **Task CRUD** | Create, List (filter/search/pagination/sorting), Detail, Update, Delete | ✅ Complete |
 | **1. Idempotency** | `Idempotency-Key` (UUID header), 24h Redis cache, concurrent race-condition safe | ✅ Complete |
 | **2. Structured Errors** | Unified `AppError`, consistent envelope, client (4xx) vs server (5xx) masking | ✅ Complete |
 | **3. Transaction & Integrity**| `POST /v1/tasks/:id/assign` with atomic DB transaction, audit logs (`task_logs`), async notification | ✅ Complete |
-| **4. Concurrency Control** | Optimistic locking on task updates and assignments via `version` column | ✅ Complete |
-| **5. Multi-Tenant Isolation** | Strict team boundaries: users can only view/manage tasks and assignees in their team | ✅ Complete |
-| **6. Unit Testing** | 100% isolated tests using `sqlmock` and in-memory mocks without external DB | ✅ Complete |
+| **4. Logging & Observability**| Structured JSON logs per request (`request_id`, `method`, `path`, `status_code`, `latency`, `INFO`/`WARN`/`ERROR`) | ✅ Complete |
+| **5. Concurrency Control** | Optimistic locking on task updates and assignments via `version` column | ✅ Complete |
+| **6. Multi-Tenant Isolation** | Strict team boundaries: users can only view/manage tasks and assignees in their team | ✅ Complete |
+| **7. Unit Testing** | 100% isolated tests using `sqlmock` and in-memory mocks without external DB | ✅ Complete |
 
 ---
 
@@ -609,3 +612,33 @@ List users belonging to the caller's team with optional name and email filters a
   - Users can only query, update, assign, or delete tasks belonging to their own `team_id`.
   - Attempts to access tasks from another team return `404 Not Found`.
   - Assignees must belong to the caller's team, otherwise rejected with `400 Bad Request`.
+
+### Structured Logging & Observability
+- Every incoming HTTP request produces a structured JSON log entry containing:
+  - `request_id`: Unique UUID per request (extracted from `X-Request-ID` or generated).
+  - `method`: HTTP method (`GET`, `POST`, `PUT`, `DELETE`).
+  - `path`: URL request path.
+  - `status_code`: HTTP response status code.
+  - `latency`: Human-readable and millisecond execution duration.
+  - `client_ip`: Remote client IP address.
+- Dynamic log levels applied automatically:
+  - `INFO`: Normal status codes (`< 400`).
+  - `WARN`: Client error status codes (`4xx`).
+  - `ERROR`: Server error status codes (`5xx`).
+- Propagates `X-Request-ID` response header for distributed tracing and context logging.
+
+### Global Panic Recovery Handler
+- Custom panic recovery middleware replaces default `gin.Recovery()` to guarantee application resilience against unexpected runtime panics and crashes.
+- Catches runtime panics cleanly using `defer recover()`.
+- Captures request context (`time`, `request_id`, `method`, `path`) and full debug stack trace (`runtime/debug.Stack()`), logging it server-side.
+- Strictly shields internal implementation details and sensitive stack traces from leaking to clients.
+- Returns a standardized HTTP 500 error envelope conforming to `BaseResponse`:
+  ```json
+  {
+    "success": false,
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "An internal server error occurred",
+    "timestamp": "2026-03-30T12:00:00Z"
+  }
+  ```
+

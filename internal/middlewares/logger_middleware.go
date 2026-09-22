@@ -3,6 +3,7 @@ package middlewares
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"os"
 	"time"
 
@@ -100,7 +101,9 @@ func StructuredLogger(opts ...LoggerOption) gin.HandlerFunc {
 		data, err := json.Marshal(entry)
 		if err == nil {
 			data = append(data, '\n')
-			_, _ = cfg.writer.Write(data)
+			if n, writeErr := cfg.writer.Write(data); writeErr != nil {
+				log.Printf("failed to write structured log (bytes: %d): %v", n, writeErr)
+			}
 		}
 	}
 }

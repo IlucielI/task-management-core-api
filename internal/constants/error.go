@@ -17,5 +17,20 @@ var (
 
 	// ErrInvalidToken is returned when a JWT token is expired, malformed, or has an invalid signature.
 	ErrInvalidToken = errors.New("invalid or expired token")
+
+	// ErrAssigneeNotInTeam is returned when the specified assignee does not belong to the creator's team.
+	ErrAssigneeNotInTeam = errors.New("assignee must belong to the same team")
+
+	// ErrInvalidTaskStatus is returned when an invalid task status code is provided.
+	ErrInvalidTaskStatus = errors.New("invalid task status")
+
+	// ErrInvalidIdempotencyKey is returned when the Idempotency-Key header is missing or malformed.
+	ErrInvalidIdempotencyKey = errors.New("invalid or missing idempotency key")
+
+	// ErrTaskNotFound is returned when a task cannot be found.
+	ErrTaskNotFound = errors.New("task not found")
+
+	// ErrUnauthorized is returned when an operation is attempted without valid authentication.
+	ErrUnauthorized = errors.New("unauthorized access")
 )
 

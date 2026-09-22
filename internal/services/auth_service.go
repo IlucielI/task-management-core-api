@@ -119,4 +119,37 @@ func (s *Service) Login(ctx context.Context, req dtos.LoginRequest) (*dtos.Login
 	}, nil
 }
 
+// AuthValidator defines the contract for validating authentication tokens and active sessions.
+type AuthValidator interface {
+	Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error)
+}
+
+// Authenticate verifies the JWT Bearer token and checks stateful session in Redis if configured.
+func (s *Service) Authenticate(ctx context.Context, tokenStr string) (*ctxmeta.AuthUser, error) {
+	if strings.TrimSpace(tokenStr) == "" {
+		return nil, constants.ErrInvalidToken
+	}
+
+	claims, err := jwt.ValidateToken(s.cfg, tokenStr)
+	if err != nil || claims.TokenType != "access" {
+		return nil, constants.ErrInvalidToken
+	}
+
+	// Verify stateful session in Redis if session repository and session ID are present
+	if s.repo != nil && s.repo.Redis() != nil && claims.SessionID != "" {
+		session, err := s.repo.GetSession(ctx, claims.SessionID)
+		if err != nil || session == nil {
+			return nil, constants.ErrInvalidToken
+		}
+	}
+
+	return &ctxmeta.AuthUser{
+		UserID:    claims.UserID,
+		Email:     claims.Email,
+		TeamID:    claims.TeamID,
+		SessionID: claims.SessionID,
+	}, nil
+}
+
+
 

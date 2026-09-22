@@ -94,6 +94,13 @@ func (c Config) DSN() string {
 	)
 }
 
+// MigrationURI returns the postgres connection URL formatted for golang-migrate CLI / runner.
+func (c Config) MigrationURI() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		c.DBUser, c.DBPass, c.DBHost, c.DBPort, c.DBName, c.DBSSLMode,
+	)
+}
+
 // RedisAddr returns the formatted host:port address for Redis.
 func (c Config) RedisAddr() string {
 	return fmt.Sprintf("%s:%s", c.RedisHost, c.RedisPort)

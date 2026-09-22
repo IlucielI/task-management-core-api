@@ -33,3 +33,38 @@ func TestContextMeta(t *testing.T) {
 		t.Fatalf("expected empty on nil ctx, got %s", ua)
 	}
 }
+
+func TestAuthUser(t *testing.T) {
+	ctx := context.Background()
+
+	// Initial empty
+	if _, ok := GetAuthUser(ctx); ok {
+		t.Fatal("expected no auth user on empty ctx")
+	}
+
+	// Nil context check
+	if _, ok := GetAuthUser(nil); ok {
+		t.Fatal("expected no auth user on nil ctx")
+	}
+
+	// Injected
+	expectedUser := AuthUser{
+		Email:     "user@example.com",
+		SessionID: "sess-12345",
+	}
+	ctx = WithAuthUser(ctx, expectedUser)
+	user, ok := GetAuthUser(ctx)
+	if !ok {
+		t.Fatal("expected auth user to be present")
+	}
+	if user.Email != expectedUser.Email || user.SessionID != expectedUser.SessionID {
+		t.Fatalf("expected user %+v, got %+v", expectedUser, user)
+	}
+
+	// Nil context in WithAuthUser
+	nilCtx := WithAuthUser(nil, expectedUser)
+	user, ok = GetAuthUser(nilCtx)
+	if !ok || user.Email != expectedUser.Email {
+		t.Fatalf("expected user %+v from nil context injection", expectedUser)
+	}
+}

@@ -103,3 +103,55 @@ func TestRepositories_CreateUser(t *testing.T) {
 		t.Fatal("expected error on insert failure, got nil")
 	}
 }
+
+func TestRepositories_FindUserByID(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	now := time.Now()
+
+	// 1. Found user
+	rows := sqlmock.NewRows([]string{"id", "name", "email", "password", "team_id", "created_at", "updated_at"}).
+		AddRow(userID, "John Doe", "john@example.com", "hashed_pass", teamID, now, now)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs(userID, 1).
+		WillReturnRows(rows)
+
+	user, err := repo.FindUserByID(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if user == nil || user.ID != userID {
+		t.Fatalf("expected user with id %v, got: %+v", userID, user)
+	}
+
+	// 2. Not found
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs(userID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	notFoundUser, err := repo.FindUserByID(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("expected nil error on not found, got %v", err)
+	}
+	if notFoundUser != nil {
+		t.Fatalf("expected nil user, got %+v", notFoundUser)
+	}
+
+	// 3. Database error
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs(userID, 1).
+		WillReturnError(errors.New("db query failure"))
+
+	errUser, err := repo.FindUserByID(context.Background(), userID)
+	if err == nil {
+		t.Fatal("expected error on db failure, got nil")
+	}
+	if errUser != nil {
+		t.Fatalf("expected nil user on error, got %+v", errUser)
+	}
+}
+

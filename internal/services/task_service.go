@@ -152,3 +152,31 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 	return taskResp, nil
 }
 
+// GetTaskByID retrieves a task by ID with multi-tenant team boundary verification.
+func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.TaskResponse, error) {
+	authUser, ok := ctxmeta.GetAuthUser(ctx)
+	if !ok || authUser.UserID == uuid.Nil {
+		return nil, constants.ErrUnauthorized
+	}
+
+	task, err := s.repo.FindTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find task: %w", err)
+	}
+	if task == nil || task.TeamID != authUser.TeamID {
+		return nil, constants.ErrTaskNotFound
+	}
+
+	return &dtos.TaskResponse{
+		ID:          task.ID,
+		Title:       task.Title,
+		Description: task.Description,
+		Status:      task.Status,
+		CreatorID:   task.CreatorID,
+		AssigneeID:  task.AssigneeID,
+		TeamID:      task.TeamID,
+		CreatedAt:   task.CreatedAt,
+		UpdatedAt:   task.UpdatedAt,
+	}, nil
+}
+

@@ -374,3 +374,122 @@ func TestService_CreateTask_Concurrency(t *testing.T) {
 	}
 }
 
+func TestService_GetTaskByID(t *testing.T) {
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	teamID := uuid.New()
+	otherTeamID := uuid.New()
+	now := time.Now()
+
+	cfg := config.Config{}
+
+	t.Run("success_same_team", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
+			AddRow(taskID, "Task Title", "Description", "todo", creatorID, teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(rows)
+
+		resp, err := svc.GetTaskByID(ctx, taskID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.ID != taskID || resp.Title != "Task Title" || resp.TeamID != teamID {
+			t.Fatalf("unexpected task response: %+v", resp)
+		}
+	})
+
+	t.Run("not_found_in_db", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
+
+		resp, err := svc.GetTaskByID(ctx, taskID)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response on not found, got: %+v", resp)
+		}
+	})
+
+	t.Run("cross_team_isolation_returns_not_found", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		// User belongs to teamID, but task belongs to otherTeamID
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "created_at", "updated_at"}).
+			AddRow(taskID, "Private Task", "Secret", "todo", creatorID, otherTeamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(rows)
+
+		resp, err := svc.GetTaskByID(ctx, taskID)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound on cross-team access, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response on cross-team access, got: %+v", resp)
+		}
+	})
+
+	t.Run("unauthorized_missing_auth_user", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+
+		resp, err := svc.GetTaskByID(context.Background(), taskID)
+		if !errors.Is(err, constants.ErrUnauthorized) {
+			t.Fatalf("expected ErrUnauthorized, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("db_error", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnError(errors.New("connection failed"))
+
+		resp, err := svc.GetTaskByID(ctx, taskID)
+		if err == nil {
+			t.Fatal("expected error on db failure, got nil")
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response on db failure, got: %+v", resp)
+		}
+	})
+}
+

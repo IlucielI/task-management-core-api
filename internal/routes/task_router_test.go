@@ -101,3 +101,71 @@ func TestRouter_CreateTask_Success(t *testing.T) {
 	}
 }
 
+func TestRouter_GetTaskByID_RequiresAuth(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	taskID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 Unauthorized when missing token, got %d", w.Code)
+	}
+}
+
+func TestRouter_GetTaskByID_Success(t *testing.T) {
+	cfg := config.Load()
+	cfg.JWTSecret = "test-secret-key-that-is-long-enough-32bytes"
+
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
+	router := routes.NewRouter(cfg, ctrls, svc)
+
+	userID := uuid.New()
+	teamID := uuid.New()
+	taskID := uuid.New()
+	user := &models.User{
+		ID:     userID,
+		Email:  "user@example.com",
+		TeamID: teamID,
+	}
+
+	tokenPair, err := jwt.GenerateTokenPair(cfg, user, "")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id"}).
+		AddRow(taskID, "E2E Detail Task", "Detail Description", "todo", userID, teamID)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(rows)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.TaskResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "E2E Detail Task" {
+		t.Fatalf("unexpected response body: %+v", resp)
+	}
+	if resp.Data.CreatorID != userID || resp.Data.TeamID != teamID {
+		t.Fatalf("mismatched user/team IDs: %+v", resp.Data)
+	}
+}
+
+

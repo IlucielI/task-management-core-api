@@ -128,18 +128,7 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to create task: %w", err))
 	}
 
-	taskResp := &dtos.TaskResponse{
-		ID:          task.ID,
-		Title:       task.Title,
-		Description: task.Description,
-		Status:      task.Status,
-		CreatorID:   task.CreatorID,
-		AssigneeID:  task.AssigneeID,
-		TeamID:      task.TeamID,
-		Version:     task.Version,
-		CreatedAt:   task.CreatedAt,
-		UpdatedAt:   task.UpdatedAt,
-	}
+	taskResp := composeTaskResponse(task)
 
 	// 8. Cache response in Redis for 24 hours
 	cachedResp := &dtos.CachedIdempotentResponse{
@@ -170,69 +159,7 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 		return nil, constants.ErrTaskNotFound
 	}
 
-	resp := &dtos.TaskResponse{
-		ID:          task.ID,
-		Title:       task.Title,
-		Description: task.Description,
-		Status:      task.Status,
-		CreatorID:   task.CreatorID,
-		AssigneeID:  task.AssigneeID,
-		TeamID:      task.TeamID,
-		Version:     task.Version,
-		CreatedAt:   task.CreatedAt,
-		UpdatedAt:   task.UpdatedAt,
-	}
-
-	if task.Creator != nil {
-		resp.Creator = &dtos.UserResponse{
-			ID:        task.Creator.ID,
-			Name:      task.Creator.Name,
-			Email:     task.Creator.Email,
-			TeamID:    task.Creator.TeamID,
-			CreatedAt: task.Creator.CreatedAt,
-			UpdatedAt: task.Creator.UpdatedAt,
-		}
-	}
-
-	if task.Assignee != nil {
-		resp.Assignee = &dtos.UserResponse{
-			ID:        task.Assignee.ID,
-			Name:      task.Assignee.Name,
-			Email:     task.Assignee.Email,
-			TeamID:    task.Assignee.TeamID,
-			CreatedAt: task.Assignee.CreatedAt,
-			UpdatedAt: task.Assignee.UpdatedAt,
-		}
-	}
-
-	if task.Team != nil {
-		resp.Team = &dtos.TeamResponse{
-			ID:        task.Team.ID,
-			Name:      task.Team.Name,
-			CreatedAt: task.Team.CreatedAt,
-			UpdatedAt: task.Team.UpdatedAt,
-		}
-	}
-
-	if len(task.Logs) > 0 {
-		resp.Logs = make([]*dtos.TaskLogResponse, 0, len(task.Logs))
-		for _, l := range task.Logs {
-			resp.Logs = append(resp.Logs, &dtos.TaskLogResponse{
-				ID:             l.ID,
-				Action:         l.Action,
-				ActorID:        l.ActorID,
-				FromAssigneeID: l.FromAssigneeID,
-				ToAssigneeID:   l.ToAssigneeID,
-				FromStatus:     l.FromStatus,
-				ToStatus:       l.ToStatus,
-				Notes:          l.Notes,
-				Metadata:       l.Metadata,
-				CreatedAt:      l.CreatedAt,
-			})
-		}
-	}
-
-	return resp, nil
+	return composeTaskResponse(task), nil
 }
 
 // DeleteTask soft-deletes a task and records a DELETE audit log within the caller's team boundary.
@@ -309,19 +236,8 @@ func (s *Service) ListTasks(ctx context.Context, query dtos.ListTasksQuery) (*dt
 	}
 
 	items := make([]*dtos.TaskResponse, len(tasks))
-	for i, task := range tasks {
-		items[i] = &dtos.TaskResponse{
-			ID:          task.ID,
-			Title:       task.Title,
-			Description: task.Description,
-			Status:      task.Status,
-			CreatorID:   task.CreatorID,
-			AssigneeID:  task.AssigneeID,
-			TeamID:      task.TeamID,
-			Version:     task.Version,
-			CreatedAt:   task.CreatedAt,
-			UpdatedAt:   task.UpdatedAt,
-		}
+	for i := range tasks {
+		items[i] = composeTaskResponse(&tasks[i])
 	}
 
 	return &dtos.ListTasksData{
@@ -440,18 +356,7 @@ func (s *Service) UpdateTask(ctx context.Context, taskID uuid.UUID, req dtos.Upd
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to update task: %w", err))
 	}
 
-	return &dtos.TaskResponse{
-		ID:          task.ID,
-		Title:       task.Title,
-		Description: task.Description,
-		Status:      task.Status,
-		CreatorID:   task.CreatorID,
-		AssigneeID:  task.AssigneeID,
-		TeamID:      task.TeamID,
-		Version:     task.Version,
-		CreatedAt:   task.CreatedAt,
-		UpdatedAt:   task.UpdatedAt,
-	}, nil
+	return composeTaskResponse(task), nil
 }
 
 // AssignTask assigns an existing task to another user within the same team, records an audit log,
@@ -514,7 +419,16 @@ func (s *Service) AssignTask(ctx context.Context, taskID uuid.UUID, req dtos.Ass
 		}
 	}()
 
-	return &dtos.TaskResponse{
+	return composeTaskResponse(task), nil
+}
+
+// composeTaskResponse maps a models.Task entity into a dtos.TaskResponse with preloaded relations.
+func composeTaskResponse(task *models.Task) *dtos.TaskResponse {
+	if task == nil {
+		return nil
+	}
+
+	resp := &dtos.TaskResponse{
 		ID:          task.ID,
 		Title:       task.Title,
 		Description: task.Description,
@@ -525,6 +439,40 @@ func (s *Service) AssignTask(ctx context.Context, taskID uuid.UUID, req dtos.Ass
 		Version:     task.Version,
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
-	}, nil
+	}
+
+	if task.Creator != nil {
+		resp.Creator = composeUserResponse(task.Creator)
+	}
+
+	if task.Assignee != nil {
+		resp.Assignee = composeUserResponse(task.Assignee)
+	}
+
+	if task.Team != nil {
+		teamResp := composeTeamResponse(task.Team)
+		resp.Team = &teamResp
+	}
+
+	if len(task.Logs) > 0 {
+		resp.Logs = make([]*dtos.TaskLogResponse, len(task.Logs))
+		for i := range task.Logs {
+			l := &task.Logs[i]
+			resp.Logs[i] = &dtos.TaskLogResponse{
+				ID:             l.ID,
+				Action:         l.Action,
+				ActorID:        l.ActorID,
+				FromAssigneeID: l.FromAssigneeID,
+				ToAssigneeID:   l.ToAssigneeID,
+				FromStatus:     l.FromStatus,
+				ToStatus:       l.ToStatus,
+				Notes:          l.Notes,
+				Metadata:       l.Metadata,
+				CreatedAt:      l.CreatedAt,
+			}
+		}
+	}
+
+	return resp
 }
 

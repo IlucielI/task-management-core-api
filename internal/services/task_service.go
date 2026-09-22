@@ -13,7 +13,6 @@ import (
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
 	"task-management/internal/models"
-	"task-management/internal/pkg/ctxmeta"
 )
 
 // CreateTask handles task creation with strict 24h idempotency and concurrency locking.
@@ -71,16 +70,16 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 	}
 
 	// 4. Extract authenticated user from context
-	authUser, ok := ctxmeta.GetAuthUser(ctx)
-	if !ok || authUser.UserID == uuid.Nil {
-		return nil, constants.ErrUnauthorized
+	authUser, err := s.getAuthUser(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
 	}
 
 	// 5. Multi-tenancy check: If AssigneeID is specified, assignee must exist and belong to the same team
 	if req.AssigneeID != nil {
 		assignee, err := s.repo.FindUserByID(ctx, *req.AssigneeID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check assignee: %w", err)
+			return nil, s.wrapError(ctx, fmt.Errorf("failed to check assignee: %w", err))
 		}
 		if assignee == nil || assignee.TeamID != authUser.TeamID {
 			return nil, constants.ErrAssigneeNotInTeam
@@ -123,7 +122,7 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 
 	// 7. Persist Task and TaskLog inside a single DB transaction
 	if err := s.repo.CreateTaskWithLog(ctx, task, log); err != nil {
-		return nil, fmt.Errorf("failed to create task: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to create task: %w", err))
 	}
 
 	taskResp := &dtos.TaskResponse{
@@ -146,7 +145,7 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 		Timestamp:  now,
 	}
 	if err := s.repo.SaveIdempotencyResponse(ctx, cleanKey, cachedResp, 24*time.Hour); err != nil {
-		return nil, fmt.Errorf("failed to save idempotency cache: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to save idempotency cache: %w", err))
 	}
 
 	return taskResp, nil
@@ -154,14 +153,14 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 
 // GetTaskByID retrieves a task by ID with multi-tenant team boundary verification.
 func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.TaskResponse, error) {
-	authUser, ok := ctxmeta.GetAuthUser(ctx)
-	if !ok || authUser.UserID == uuid.Nil {
-		return nil, constants.ErrUnauthorized
+	authUser, err := s.getAuthUser(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
 	}
 
 	task, err := s.repo.FindTaskByID(ctx, taskID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find task: %w", err)
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to find task: %w", err))
 	}
 	if task == nil || task.TeamID != authUser.TeamID {
 		return nil, constants.ErrTaskNotFound
@@ -179,4 +178,5 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 		UpdatedAt:   task.UpdatedAt,
 	}, nil
 }
+
 

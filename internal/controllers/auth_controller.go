@@ -1,8 +1,8 @@
 package controllers
 
 import (
-	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -15,47 +15,27 @@ import (
 func (c *Controllers) Register(ctx *gin.Context) {
 	var req dtos.RegisterRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeBadRequest,
-			Message: err.Error(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	if err := validations.ValidateRegisterRequest(req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeBadRequest,
-			Message: err.Error(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	user, err := c.svc.Register(ctx.Request.Context(), req)
 	if err != nil {
-		if errors.Is(err, constants.ErrTeamNotFound) || errors.Is(err, constants.ErrEmailAlreadyExists) {
-			ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeBadRequest,
-				Message: err.Error(),
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeInternalError,
-			Message: "Failed to register user",
-		})
+		c.wrapError(ctx, err)
 		return
 	}
 
 	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.UserResponse]{
-		Success: true,
-		Code:    constants.ResponseCodeSuccess,
-		Message: "User registered successfully",
-		Data:    user,
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "User registered successfully",
+		Data:      user,
+		Timestamp: time.Now(),
 	})
 }
 
@@ -63,48 +43,29 @@ func (c *Controllers) Register(ctx *gin.Context) {
 func (c *Controllers) Login(ctx *gin.Context) {
 	var req dtos.LoginRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeBadRequest,
-			Message: err.Error(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	if err := validations.ValidateLoginRequest(req); err != nil {
-		ctx.JSON(http.StatusBadRequest, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeBadRequest,
-			Message: err.Error(),
-		})
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
 		return
 	}
 
 	resp, err := c.svc.Login(ctx.Request.Context(), req)
 	if err != nil {
-		if errors.Is(err, constants.ErrInvalidCredentials) {
-			ctx.JSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: err.Error(),
-			})
-			return
-		}
-
-		ctx.JSON(http.StatusInternalServerError, dtos.BaseResponse{
-			Success: false,
-			Code:    constants.ResponseCodeInternalError,
-			Message: "Failed to authenticate user",
-		})
+		c.wrapError(ctx, err)
 		return
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.LoginResponse]{
-		Success: true,
-		Code:    constants.ResponseCodeSuccess,
-		Message: "User authenticated successfully",
-		Data:    resp,
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "User authenticated successfully",
+		Data:      resp,
+		Timestamp: time.Now(),
 	})
 }
+
 
 

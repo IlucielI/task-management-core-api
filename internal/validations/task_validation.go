@@ -1,7 +1,6 @@
 package validations
 
 import (
-	"errors"
 	"strings"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -44,12 +43,12 @@ func ValidateCreateTaskRequest(req dtos.CreateTaskRequest) error {
 func ValidateTaskID(idStr string) (uuid.UUID, error) {
 	trimmed := strings.TrimSpace(idStr)
 	if trimmed == "" {
-		return uuid.Nil, errors.New("invalid task id format")
+		return uuid.Nil, validation.NewError("validation_invalid", "invalid task id format")
 	}
 
 	taskID, err := uuid.Parse(trimmed)
 	if err != nil || taskID == uuid.Nil {
-		return uuid.Nil, errors.New("invalid task id format")
+		return uuid.Nil, validation.NewError("validation_invalid", "invalid task id format")
 	}
 	return taskID, nil
 }

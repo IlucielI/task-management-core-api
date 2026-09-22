@@ -1,8 +1,14 @@
 package services
 
 import (
+	"context"
+
+	"github.com/google/uuid"
+
 	"task-management/internal/adapters/s3"
 	"task-management/internal/config"
+	"task-management/internal/constants"
+	"task-management/internal/pkg/ctxmeta"
 	"task-management/internal/repositories"
 )
 
@@ -34,3 +40,21 @@ func (s *Service) Repositories() *repositories.Repositories {
 	}
 	return s.repo
 }
+
+// wrapError wraps unknown or system errors into structured AppError.
+func (s *Service) wrapError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	return constants.ErrInternalServerError.Wrap(err)
+}
+
+// getAuthUser extracts and validates the authenticated user from context.
+func (s *Service) getAuthUser(ctx context.Context) (ctxmeta.AuthUser, error) {
+	authUser, ok := ctxmeta.GetAuthUser(ctx)
+	if !ok || authUser.UserID == uuid.Nil {
+		return ctxmeta.AuthUser{}, constants.ErrUnauthorized
+	}
+	return authUser, nil
+}
+

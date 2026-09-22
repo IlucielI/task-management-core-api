@@ -1,6 +1,9 @@
 package repositories
 
 import (
+	"context"
+	"errors"
+
 	"gorm.io/gorm"
 
 	"task-management/internal/adapters/redis"
@@ -38,5 +41,25 @@ func (r *Repositories) Redis() *redis.Redis {
 		return nil
 	}
 	return r.rdb
+}
+
+// PingDB checks connectivity to Postgres via GORM's underlying sql.DB.
+func (r *Repositories) PingDB(ctx context.Context) error {
+	if r == nil || r.db == nil {
+		return errors.New("database connection is nil")
+	}
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return err
+	}
+	return sqlDB.PingContext(ctx)
+}
+
+// PingRedis checks connectivity to Redis.
+func (r *Repositories) PingRedis(ctx context.Context) error {
+	if r == nil || r.rdb == nil {
+		return errors.New("redis connection is nil")
+	}
+	return r.rdb.Ping(ctx)
 }
 

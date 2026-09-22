@@ -37,7 +37,7 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers) *gin.Engine {
 
 	// Central controllers container
 	if ctrls == nil {
-		ctrls = controllers.New(cfg, nil, nil, nil)
+		ctrls = controllers.New(cfg, nil)
 	}
 	ctrlsVal := reflect.ValueOf(ctrls)
 

@@ -40,7 +40,7 @@ func setupMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 
 func TestRouter_HealthCheck(t *testing.T) {
 	cfg := config.Load()
-	ctrls := controllers.New(cfg, nil, nil, nil)
+	ctrls := controllers.New(cfg, nil)
 	router := routes.NewRouter(cfg, ctrls)
 
 	w := httptest.NewRecorder()
@@ -93,11 +93,8 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 	cfg := config.Load()
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := controllers.New(cfg, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
 
 	router := routes.NewRouter(cfg, ctrls)
 

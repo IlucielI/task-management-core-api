@@ -1,10 +1,6 @@
 package services
 
 import (
-	"gorm.io/gorm"
-
-	"task-management/internal/adapters/database"
-	"task-management/internal/adapters/redis"
 	"task-management/internal/adapters/s3"
 	"task-management/internal/config"
 	"task-management/internal/repositories"
@@ -18,16 +14,11 @@ type Service struct {
 }
 
 // New creates a new unified service container.
-func New(cfg config.Config, db *database.Postgres, rdb *redis.Redis, storage *s3.S3) *Service {
-	var gormDB *gorm.DB
-	if db != nil {
-		gormDB = db.DB()
-	}
-
+func New(cfg config.Config, repo *repositories.Repositories, storage *s3.S3) *Service {
 	return &Service{
 		cfg:     cfg,
 		storage: storage,
-		repo:    repositories.New(gormDB, rdb),
+		repo:    repo,
 	}
 }
 

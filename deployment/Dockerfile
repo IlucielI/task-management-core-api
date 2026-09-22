@@ -1,9 +1,12 @@
 FROM task-management-core-api-base:latest AS builder
 
+ARG TARGETOS=linux
+ARG TARGETARCH
+
 WORKDIR /src
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/api ./cmd/api
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /out/api ./cmd/api
 
 FROM alpine:3.20 AS runtime
 

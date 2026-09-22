@@ -36,10 +36,19 @@ docker compose -f deployment/docker-compose.yaml up
 
 ## Typical Flow
 
+You can use the unified build script which automatically builds the base image if missing:
+
+```bash
+./deployment/build.sh
+docker compose -f deployment/docker-compose.yaml up -d
+```
+
+Or run step-by-step:
+
 ```bash
 ./deployment/build-base.sh
 ./deployment/build-api.sh
-docker compose -f deployment/docker-compose.yaml up
+docker compose -f deployment/docker-compose.yaml up -d
 ```
 
-If only source code changes, rerun `./deployment/build-api.sh`. If dependencies change, rerun both build scripts.
+If only source code changes, rerun `./deployment/build-api.sh` (or `./deployment/build.sh`). If dependencies change, rebuild the base image via `./deployment/build-base.sh`.

@@ -139,8 +139,13 @@ go run ./cmd/api
 The server will start listening at `http://localhost:8080`.
 
 ### 2. Run with Docker Compose
+Build the application image (automatically builds base dependency image if missing):
 ```bash
-docker compose -f deployment/docker-compose.yaml up --build
+# Build Docker images
+./deployment/build.sh
+
+# Start all containers in background
+docker compose -f deployment/docker-compose.yaml up -d
 ```
 
 ---

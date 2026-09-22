@@ -73,3 +73,53 @@ func TestRepositories_FindAllTeams_DBError(t *testing.T) {
 		t.Fatalf("expected nil teams on error, got: %+v", teams)
 	}
 }
+
+func TestRepositories_FindTeamByID(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	teamID := uuid.New()
+	now := time.Now()
+
+	// 1. Success found
+	rows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
+		AddRow(teamID, "Engineering", now, now)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE id = $1 ORDER BY "teams"."id" LIMIT $2`)).
+		WithArgs(teamID, 1).
+		WillReturnRows(rows)
+
+	team, err := repo.FindTeamByID(context.Background(), teamID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if team == nil || team.ID != teamID {
+		t.Fatalf("expected team ID %v, got %+v", teamID, team)
+	}
+
+	// 2. Not found (returns nil, nil)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE id = $1 ORDER BY "teams"."id" LIMIT $2`)).
+		WithArgs(teamID, 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	teamNotFound, err := repo.FindTeamByID(context.Background(), teamID)
+	if err != nil {
+		t.Fatalf("expected nil error on not found, got %v", err)
+	}
+	if teamNotFound != nil {
+		t.Fatalf("expected nil team on not found, got %+v", teamNotFound)
+	}
+
+	// 3. Database error
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE id = $1 ORDER BY "teams"."id" LIMIT $2`)).
+		WithArgs(teamID, 1).
+		WillReturnError(errors.New("connection failed"))
+
+	teamErr, err := repo.FindTeamByID(context.Background(), teamID)
+	if err == nil {
+		t.Fatal("expected error on db failure, got nil")
+	}
+	if teamErr != nil {
+		t.Fatalf("expected nil team on error, got %+v", teamErr)
+	}
+}

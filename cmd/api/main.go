@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"task-management/internal/adapters/database"
+	"task-management/internal/adapters/redis"
 	"task-management/internal/config"
 	"task-management/internal/controllers"
 	"task-management/internal/routes"
@@ -33,7 +34,23 @@ func main() {
 		}()
 	}
 
-	ctrls := controllers.New(cfg, db)
+	// Initialize redis adapter
+	rdb, err := redis.New(cfg)
+	if err != nil {
+		if cfg.AppEnv == "production" {
+			log.Fatalf("failed to connect to redis: %v", err)
+		}
+		log.Printf("[WARN] redis connection failed: %v", err)
+	} else {
+		log.Println("redis adapter connected successfully")
+		defer func() {
+			if err := rdb.Close(); err != nil {
+				log.Printf("error closing redis connection: %v", err)
+			}
+		}()
+	}
+
+	ctrls := controllers.New(cfg, db, rdb)
 	router := routes.NewRouter(cfg, ctrls)
 
 	httpServer := &http.Server{

@@ -15,7 +15,7 @@ import (
 
 func TestRouter_HealthCheck(t *testing.T) {
 	cfg := config.Load()
-	ctrls := controllers.New(cfg, nil)
+	ctrls := controllers.New(cfg, nil, nil)
 	router := routes.NewRouter(cfg, ctrls)
 
 	w := httptest.NewRecorder()
@@ -55,5 +55,8 @@ func TestRouter_HealthCheck(t *testing.T) {
 	}
 	if resp.Data.Services.Database != constants.IntegrationStatusDisconnected {
 		t.Errorf("expected database status %q when db is nil, got %q", constants.IntegrationStatusDisconnected, resp.Data.Services.Database)
+	}
+	if resp.Data.Services.Redis != constants.IntegrationStatusDisconnected {
+		t.Errorf("expected redis status %q when rdb is nil, got %q", constants.IntegrationStatusDisconnected, resp.Data.Services.Redis)
 	}
 }

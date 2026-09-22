@@ -39,7 +39,7 @@ func (s *Service) Register(ctx context.Context, req dtos.RegisterRequest) (*dtos
 	// 3. Hash password using bcrypt
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, s.wrapError(ctx, fmt.Errorf("failed to hash password: %w", err))
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to generate secure hash: %w", err))
 	}
 
 	// 4. Create user record

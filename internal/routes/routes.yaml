@@ -41,3 +41,9 @@ routes:
     handler: DeleteTask
     auth: true
 
+  # User endpoints
+  - method: GET
+    path: /v1/users
+    handler: ListUsers
+    auth: true
+

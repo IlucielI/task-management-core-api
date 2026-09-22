@@ -43,3 +43,41 @@ func (r *Repositories) FindUserByID(ctx context.Context, id uuid.UUID) (*models.
 	return &user, nil
 }
 
+// UserFilter represents search, filter, and pagination criteria for users.
+type UserFilter struct {
+	TeamID *uuid.UUID
+	Name   string
+	Email  string
+	Offset int
+	Limit  int
+}
+
+// FindUsers retrieves a paginated slice of users and total count matching filter criteria.
+func (r *Repositories) FindUsers(ctx context.Context, filter UserFilter) ([]models.User, int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.User{})
+
+	if filter.TeamID != nil {
+		query = query.Where("team_id = ?", *filter.TeamID)
+	}
+
+	if filter.Name != "" {
+		query = query.Where("LOWER(name) LIKE LOWER(?)", "%"+filter.Name+"%")
+	}
+
+	if filter.Email != "" {
+		query = query.Where("LOWER(email) LIKE LOWER(?)", "%"+filter.Email+"%")
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var users []models.User
+	if err := query.Order("name ASC").Offset(filter.Offset).Limit(filter.Limit).Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
+}
+

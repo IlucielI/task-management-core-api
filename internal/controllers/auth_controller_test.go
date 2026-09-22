@@ -30,11 +30,8 @@ func TestControllers_Register_Success(t *testing.T) {
 
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(config.Config{}, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
 
 	teamID := uuid.New()
 	userID := uuid.New()
@@ -92,7 +89,7 @@ func TestControllers_Register_Success(t *testing.T) {
 func TestControllers_Register_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
@@ -117,7 +114,7 @@ func TestControllers_Register_InvalidJSON(t *testing.T) {
 func TestControllers_Register_ValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	invalidReq := dtos.RegisterRequest{
 		Name:     "",
@@ -152,11 +149,8 @@ func TestControllers_Register_DomainErrors(t *testing.T) {
 
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(config.Config{}, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(config.Config{}, repo, nil)
+	ctrls := New(config.Config{}, svc)
 
 	teamID := uuid.New()
 	reqPayload := dtos.RegisterRequest{
@@ -254,11 +248,8 @@ func TestControllers_Login_Success(t *testing.T) {
 		JWTAccessExpiration:  24 * time.Hour,
 		JWTRefreshExpiration: 7 * 24 * time.Hour,
 	}
-	svc := services.New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(cfg, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(cfg, repo, nil)
+	ctrls := New(cfg, svc)
 
 	userID := uuid.New()
 	teamID := uuid.New()
@@ -315,7 +306,7 @@ func TestControllers_Login_Success(t *testing.T) {
 func TestControllers_Login_InvalidJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
@@ -340,7 +331,7 @@ func TestControllers_Login_InvalidJSON(t *testing.T) {
 func TestControllers_Login_ValidationError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	ctrls := New(config.Config{}, nil, nil, nil)
+	ctrls := New(config.Config{}, nil)
 
 	reqPayload := dtos.LoginRequest{
 		Email:    "invalid-email-format",
@@ -376,11 +367,8 @@ func TestControllers_Login_InvalidCredentials(t *testing.T) {
 	cfg := config.Config{
 		JWTSecret: "test-jwt-secret-key",
 	}
-	svc := services.New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(cfg, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(cfg, repo, nil)
+	ctrls := New(cfg, svc)
 
 	// User not found in DB
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
@@ -419,11 +407,8 @@ func TestControllers_Login_InternalError(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
 	cfg := config.Config{}
-	svc := services.New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := New(cfg, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(cfg, repo, nil)
+	ctrls := New(cfg, svc)
 
 	// Database failure
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).

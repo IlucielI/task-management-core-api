@@ -29,11 +29,8 @@ func TestRouter_Register_RouteRegistered(t *testing.T) {
 	cfg := config.Load()
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := services.New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := controllers.New(cfg, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
 
 	router := routes.NewRouter(cfg, ctrls)
 
@@ -100,11 +97,8 @@ func TestRouter_Login_RouteRegistered(t *testing.T) {
 	rClient, rMock := redismock.NewClientMock()
 	rdb := redis.NewWithClient(rClient)
 	repo := repositories.New(gormDB, rdb)
-	svc := services.New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
-
-	ctrls := controllers.New(cfg, nil, nil, nil)
-	ctrls.SetService(svc)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
 
 	router := routes.NewRouter(cfg, ctrls)
 

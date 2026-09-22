@@ -25,8 +25,7 @@ import (
 func TestService_Register_Success(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	userID := uuid.New()
@@ -79,8 +78,7 @@ func TestService_Register_Success(t *testing.T) {
 func TestService_Register_TeamNotFound(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	req := dtos.RegisterRequest{
@@ -107,8 +105,7 @@ func TestService_Register_TeamNotFound(t *testing.T) {
 func TestService_Register_EmailAlreadyExists(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	existingUserID := uuid.New()
@@ -147,8 +144,7 @@ func TestService_Register_EmailAlreadyExists(t *testing.T) {
 func TestService_Register_DatabaseErrors(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	now := time.Now()
@@ -214,8 +210,7 @@ func TestService_Login_Success(t *testing.T) {
 		JWTAccessExpiration:  24 * time.Hour,
 		JWTRefreshExpiration: 7 * 24 * time.Hour,
 	}
-	svc := New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(cfg, repo, nil)
 
 	userID := uuid.New()
 	teamID := uuid.New()
@@ -274,8 +269,7 @@ func TestService_Login_UserNotFound(t *testing.T) {
 	cfg := config.Config{
 		JWTSecret: "test-jwt-secret-key",
 	}
-	svc := New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(cfg, repo, nil)
 
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
 		WithArgs("unknown@example.com", 1).
@@ -301,8 +295,7 @@ func TestService_Login_InvalidPassword(t *testing.T) {
 	cfg := config.Config{
 		JWTSecret: "test-jwt-secret-key",
 	}
-	svc := New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(cfg, repo, nil)
 
 	userID := uuid.New()
 	teamID := uuid.New()
@@ -336,8 +329,7 @@ func TestService_Login_DatabaseError(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
 	cfg := config.Config{}
-	svc := New(cfg, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(cfg, repo, nil)
 
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE LOWER(email) = $1 ORDER BY "users"."id" LIMIT $2`)).
 		WithArgs("jane@example.com", 1).

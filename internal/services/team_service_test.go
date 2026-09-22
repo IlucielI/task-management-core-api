@@ -36,8 +36,7 @@ func setupMockDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 func TestService_GetTeams_Success(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	teamID := uuid.New()
 	now := time.Now()
@@ -65,8 +64,7 @@ func TestService_GetTeams_Success(t *testing.T) {
 func TestService_GetTeams_Error(t *testing.T) {
 	gormDB, mock := setupMockDB(t)
 	repo := repositories.New(gormDB)
-	svc := New(config.Config{}, nil, nil, nil)
-	svc.SetRepositories(repo)
+	svc := New(config.Config{}, repo, nil)
 
 	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" ORDER BY name ASC`)).
 		WillReturnError(errors.New("db error"))

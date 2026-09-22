@@ -152,4 +152,38 @@ func (c *Controllers) UpdateTask(ctx *gin.Context) {
 	})
 }
 
+// AssignTask handles assigning a task to another user within the team.
+func (c *Controllers) AssignTask(ctx *gin.Context) {
+	taskID, err := validations.ValidateTaskID(ctx.Param("id"))
+	if err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	var req dtos.AssignTaskRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	if err := validations.ValidateAssignTaskRequest(req); err != nil {
+		c.wrapError(ctx, constants.ErrBadRequest.Wrap(err))
+		return
+	}
+
+	task, err := c.svc.AssignTask(ctx.Request.Context(), taskID, req)
+	if err != nil {
+		c.wrapError(ctx, err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.TaskResponse]{
+		Success:   true,
+		Code:      constants.ResponseCodeSuccess,
+		Message:   "Task assigned successfully",
+		Data:      task,
+		Timestamp: time.Now(),
+	})
+}
+
 

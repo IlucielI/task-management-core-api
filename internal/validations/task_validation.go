@@ -140,3 +140,22 @@ func ValidateListTasksQuery(query *dtos.ListTasksQuery) error {
 	return nil
 }
 
+// ValidateAssignTaskRequest validates payload for assigning a task.
+func ValidateAssignTaskRequest(req dtos.AssignTaskRequest) error {
+	return validation.ValidateStruct(&req,
+		validation.Field(&req.AssigneeID,
+			validation.Required.Error("assignee_id is required"),
+			validation.By(func(value interface{}) error {
+				if id, ok := value.(uuid.UUID); !ok || id == uuid.Nil {
+					return validation.NewError("validation_invalid", "assignee_id must be a valid non-nil uuid")
+				}
+				return nil
+			}),
+		),
+		validation.Field(&req.Version,
+			validation.Required.Error("version is required"),
+			validation.Min(1).Error("version must be greater than or equal to 1"),
+		),
+	)
+}
+

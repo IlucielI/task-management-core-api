@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	stdlog "log"
 	"strings"
 	"time"
 
@@ -401,3 +402,78 @@ func (s *Service) UpdateTask(ctx context.Context, taskID uuid.UUID, req dtos.Upd
 		UpdatedAt:   task.UpdatedAt,
 	}, nil
 }
+
+// AssignTask assigns an existing task to another user within the same team, records an audit log,
+// and sends a notification within a single database transaction.
+func (s *Service) AssignTask(ctx context.Context, taskID uuid.UUID, req dtos.AssignTaskRequest) (*dtos.TaskResponse, error) {
+	authUser, err := s.getAuthUser(ctx)
+	if err != nil {
+		return nil, s.wrapError(ctx, err)
+	}
+
+	task, err := s.repo.FindTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to find task: %w", err))
+	}
+	if task == nil || task.TeamID != authUser.TeamID {
+		return nil, constants.ErrTaskNotFound
+	}
+
+	if task.Version != req.Version {
+		return nil, constants.ErrStaleVersion
+	}
+	expectedVersion := req.Version
+
+	// Validate assignee exists and belongs to the caller's team
+	assignee, err := s.repo.FindUserByID(ctx, req.AssigneeID)
+	if err != nil {
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to check assignee: %w", err))
+	}
+	if assignee == nil || assignee.TeamID != authUser.TeamID {
+		return nil, constants.ErrAssigneeNotInTeam
+	}
+
+	oldAssigneeID := task.AssigneeID
+	now := time.Now()
+	task.AssigneeID = &req.AssigneeID
+	task.UpdatedAt = now
+	task.Version = expectedVersion + 1
+
+	notes := fmt.Sprintf("Task assigned to %s", assignee.Name)
+	log := &models.TaskLog{
+		ID:             uuid.New(),
+		TaskID:         task.ID,
+		Action:         constants.TaskActionAssign,
+		ActorID:        &authUser.UserID,
+		FromAssigneeID: oldAssigneeID,
+		ToAssigneeID:   task.AssigneeID,
+		Notes:          &notes,
+		Metadata:       models.JSONMap{"source": "api"},
+		CreatedAt:      now,
+	}
+
+	if err := s.repo.AssignTaskWithLog(ctx, task, expectedVersion, log); err != nil {
+		return nil, s.wrapError(ctx, fmt.Errorf("failed to assign task: %w", err))
+	}
+
+	// Dispatch notification asynchronously after successful database transaction commit
+	go func() {
+		if err := s.notifier.SendTaskAssignedNotification(context.Background(), task, assignee); err != nil {
+			stdlog.Printf("[WARN] failed to send task assignment notification: %v", err)
+		}
+	}()
+
+	return &dtos.TaskResponse{
+		ID:          task.ID,
+		Title:       task.Title,
+		Description: task.Description,
+		Status:      task.Status,
+		CreatorID:   task.CreatorID,
+		AssigneeID:  task.AssigneeID,
+		TeamID:      task.TeamID,
+		Version:     task.Version,
+		CreatedAt:   task.CreatedAt,
+		UpdatedAt:   task.UpdatedAt,
+	}, nil
+}
+

@@ -46,6 +46,11 @@ routes:
     handler: DeleteTask
     auth: true
 
+  - method: POST
+    path: /v1/tasks/:id/assign
+    handler: AssignTask
+    auth: true
+
   # User endpoints
   - method: GET
     path: /v1/users

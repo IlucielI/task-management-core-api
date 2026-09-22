@@ -21,6 +21,7 @@ import (
 	"task-management/internal/config"
 	"task-management/internal/constants"
 	"task-management/internal/dtos"
+	"task-management/internal/models"
 	"task-management/internal/pkg/ctxmeta"
 	"task-management/internal/repositories"
 )
@@ -1164,4 +1165,243 @@ func TestService_UpdateTask(t *testing.T) {
 		}
 	})
 }
+
+type testNotifier struct {
+	notifyErr error
+	done      chan struct{}
+}
+
+func (m *testNotifier) SendTaskAssignedNotification(ctx context.Context, task *models.Task, assignee *models.User) error {
+	if m.done != nil {
+		select {
+		case m.done <- struct{}{}:
+		default:
+		}
+	}
+	return m.notifyErr
+}
+
+func TestService_AssignTask(t *testing.T) {
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	oldAssigneeID := uuid.New()
+	newAssigneeID := uuid.New()
+	teamID := uuid.New()
+	otherTeamID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+	version := 1
+	staleVersion := 2
+
+	cfg := config.Config{}
+
+	t.Run("success_assign_task", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		notif := &testNotifier{done: make(chan struct{}, 1)}
+		svc := New(cfg, repo, nil)
+		svc.SetNotifier(notif)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		// 1. Find task
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Task Title", "Desc", "todo", creatorID, &oldAssigneeID, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		// 2. Find new assignee in same team
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(newAssigneeID, "Target Assignee", "target@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+			WithArgs(newAssigneeID, 1).
+			WillReturnRows(assigneeRows)
+
+		// 3. Transaction update & log
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+		mock.ExpectCommit()
+
+		req := dtos.AssignTaskRequest{
+			AssigneeID: newAssigneeID,
+			Version:    version,
+		}
+
+		resp, err := svc.AssignTask(ctx, taskID, req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp == nil || resp.ID != taskID || *resp.AssigneeID != newAssigneeID || resp.Version != 2 {
+			t.Fatalf("unexpected assigned task response: %+v", resp)
+		}
+
+		select {
+		case <-notif.done:
+		case <-time.After(100 * time.Millisecond):
+			t.Fatal("expected notification to be dispatched asynchronously")
+		}
+	})
+
+	t.Run("db_assign_task_error", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Task Title", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(newAssigneeID, "Target Assignee", "target@example.com", teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+			WithArgs(newAssigneeID, 1).
+			WillReturnRows(assigneeRows)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+			WillReturnError(errors.New("db assign error"))
+		mock.ExpectRollback()
+
+		req := dtos.AssignTaskRequest{
+			AssigneeID: newAssigneeID,
+			Version:    version,
+		}
+
+		resp, err := svc.AssignTask(ctx, taskID, req)
+		if err == nil {
+			t.Fatal("expected error on db assign failure, got nil")
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("stale_task_version_conflict", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Title", "Desc", "todo", creatorID, nil, teamID, staleVersion, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		req := dtos.AssignTaskRequest{
+			AssigneeID: newAssigneeID,
+			Version:    version,
+		}
+
+		resp, err := svc.AssignTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrStaleVersion) {
+			t.Fatalf("expected ErrStaleVersion, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("cross_team_task_isolation", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Other Task", "Desc", "todo", creatorID, nil, otherTeamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		req := dtos.AssignTaskRequest{
+			AssigneeID: newAssigneeID,
+			Version:    version,
+		}
+
+		resp, err := svc.AssignTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("assignee_not_found_or_different_team", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "version", "created_at", "updated_at"}).
+			AddRow(taskID, "Task", "Desc", "todo", creatorID, nil, teamID, version, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(taskRows)
+
+		// Assignee in other team
+		assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+			AddRow(newAssigneeID, "Foreign Assignee", "foreign@example.com", otherTeamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+			WithArgs(newAssigneeID, 1).
+			WillReturnRows(assigneeRows)
+
+		req := dtos.AssignTaskRequest{
+			AssigneeID: newAssigneeID,
+			Version:    version,
+		}
+
+		resp, err := svc.AssignTask(ctx, taskID, req)
+		if !errors.Is(err, constants.ErrAssigneeNotInTeam) {
+			t.Fatalf("expected ErrAssigneeNotInTeam, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+
+	t.Run("unauthorized_missing_auth_user", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+		req := dtos.AssignTaskRequest{
+			AssigneeID: newAssigneeID,
+			Version:    version,
+		}
+
+		resp, err := svc.AssignTask(context.Background(), taskID, req)
+		if !errors.Is(err, constants.ErrUnauthorized) {
+			t.Fatalf("expected ErrUnauthorized, got: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("expected nil response, got: %+v", resp)
+		}
+	})
+}
+
 

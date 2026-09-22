@@ -397,4 +397,93 @@ func TestRouter_UpdateTask_Success(t *testing.T) {
 	}
 }
 
+func TestRouter_AssignTask_RequiresAuth(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	taskID := uuid.New()
+	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+taskID.String()+"/assign", bytes.NewReader([]byte("{}")))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 Unauthorized when missing token, got %d", w.Code)
+	}
+}
+
+func TestRouter_AssignTask_Success(t *testing.T) {
+	cfg := config.Load()
+	gormDB, mock := setupMockDB(t)
+	repo := repositories.New(gormDB)
+	svc := services.New(cfg, repo, nil)
+	ctrls := controllers.New(cfg, svc)
+	router := routes.NewRouter(cfg, ctrls, svc)
+
+	taskID := uuid.New()
+	userID := uuid.New()
+	assigneeID := uuid.New()
+	teamID := uuid.New()
+	logID := uuid.New()
+	version := 1
+
+	user := &models.User{
+		ID:     userID,
+		Email:  "user@example.com",
+		TeamID: teamID,
+	}
+	tokenPair, err := jwt.GenerateTokenPair(cfg, user, "test-session-id")
+	if err != nil {
+		t.Fatalf("failed to generate token pair: %v", err)
+	}
+
+	// 1. Task query
+	taskRows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "team_id", "version"}).
+		AddRow(taskID, "Task Title", "Desc", "todo", userID, teamID, version)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+		WithArgs(taskID, 1).
+		WillReturnRows(taskRows)
+
+	// 2. Assignee query
+	assigneeRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id"}).
+		AddRow(assigneeID, "New Assignee", "assignee@example.com", teamID)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE id = $1 ORDER BY "users"."id" LIMIT $2`)).
+		WithArgs(assigneeID, 1).
+		WillReturnRows(assigneeRows)
+
+	// 3. Update & Log
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+	mock.ExpectCommit()
+
+	reqBody := dtos.AssignTaskRequest{
+		AssigneeID: assigneeID,
+		Version:    version,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/tasks/"+taskID.String()+"/assign", bytes.NewReader(bodyBytes))
+	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dtos.APIResponse[*dtos.TaskResponse]
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Success || resp.Data == nil || *resp.Data.AssigneeID != assigneeID || resp.Data.Version != 2 {
+		t.Fatalf("unexpected response data: %+v", resp.Data)
+	}
+}
+
+
 

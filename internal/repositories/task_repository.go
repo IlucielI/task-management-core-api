@@ -79,6 +79,31 @@ func (r *Repositories) UpdateTaskWithLog(ctx context.Context, task *models.Task,
 	})
 }
 
+// AssignTaskWithLog updates task assignee and version, and inserts an audit log within a single database transaction.
+func (r *Repositories) AssignTaskWithLog(ctx context.Context, task *models.Task, expectedVersion int, log *models.TaskLog) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&models.Task{}).
+			Where("id = ? AND version = ?", task.ID, expectedVersion).
+			Select("AssigneeID", "Version", "UpdatedAt").
+			Updates(task)
+		if err := res.Error; err != nil {
+			return err
+		}
+		if res.RowsAffected == 0 {
+			return constants.ErrStaleVersion
+		}
+
+		if log != nil {
+			log.TaskID = task.ID
+			if err := tx.Create(log).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
 // TaskFilter represents search, filter, and pagination criteria for tasks.
 type TaskFilter struct {
 	TeamID     *uuid.UUID

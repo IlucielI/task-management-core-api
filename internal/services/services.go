@@ -9,23 +9,31 @@ import (
 	"task-management/internal/config"
 	"task-management/internal/constants"
 	"task-management/internal/pkg/ctxmeta"
+	"task-management/internal/pkg/notification"
 	"task-management/internal/repositories"
 )
 
 // Service is the unified application service container.
 type Service struct {
-	cfg     config.Config
-	storage *s3.S3
-	repo    *repositories.Repositories
+	cfg      config.Config
+	storage  *s3.S3
+	repo     *repositories.Repositories
+	notifier notification.Notifier
 }
 
 // New creates a new unified service container.
 func New(cfg config.Config, repo *repositories.Repositories, storage *s3.S3) *Service {
 	return &Service{
-		cfg:     cfg,
-		storage: storage,
-		repo:    repo,
+		cfg:      cfg,
+		storage:  storage,
+		repo:     repo,
+		notifier: notification.NewLogNotifier(),
 	}
+}
+
+// SetNotifier allows injecting or overriding notification provider (e.g. for testing).
+func (s *Service) SetNotifier(notifier notification.Notifier) {
+	s.notifier = notifier
 }
 
 // SetRepositories allows injecting or overriding repositories (e.g. for testing).

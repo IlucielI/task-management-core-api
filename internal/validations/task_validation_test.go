@@ -391,3 +391,56 @@ func TestValidateUpdateTaskRequest(t *testing.T) {
 	}
 }
 
+func TestValidateAssignTaskRequest(t *testing.T) {
+	validAssignee := uuid.New()
+	nilAssignee := uuid.Nil
+
+	tests := []struct {
+		name    string
+		req     dtos.AssignTaskRequest
+		wantErr bool
+	}{
+		{
+			name: "valid - assignee and version",
+			req: dtos.AssignTaskRequest{
+				AssigneeID: validAssignee,
+				Version:    1,
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid - missing / zero version",
+			req: dtos.AssignTaskRequest{
+				AssigneeID: validAssignee,
+				Version:    0,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid - negative version",
+			req: dtos.AssignTaskRequest{
+				AssigneeID: validAssignee,
+				Version:    -1,
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid - nil assignee",
+			req: dtos.AssignTaskRequest{
+				AssigneeID: nilAssignee,
+				Version:    1,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateAssignTaskRequest(tt.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateAssignTaskRequest() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+

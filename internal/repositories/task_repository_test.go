@@ -406,4 +406,85 @@ func TestRepositories_UpdateTaskWithLog(t *testing.T) {
 	}
 }
 
+func TestRepositories_AssignTaskWithLog(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	assigneeID := uuid.New()
+	teamID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+	version := 1
+	nextVersion := 2
+
+	task := &models.Task{
+		ID:          taskID,
+		Title:       "Assignment Task",
+		Status:      "todo",
+		CreatorID:   creatorID,
+		AssigneeID:  &assigneeID,
+		TeamID:      teamID,
+		Version:     nextVersion,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	log := &models.TaskLog{
+		ID:        logID,
+		TaskID:    taskID,
+		Action:    "ASSIGN",
+		CreatedAt: now,
+	}
+
+	// 1. Success update and log
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+	mock.ExpectCommit()
+
+	err := repo.AssignTaskWithLog(context.Background(), task, version, log)
+	if err != nil {
+		t.Fatalf("unexpected error on assign task: %v", err)
+	}
+
+	// 2. Stale version (0 rows affected) rolls back transaction
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+
+	err = repo.AssignTaskWithLog(context.Background(), task, version, log)
+	if !errors.Is(err, constants.ErrStaleVersion) {
+		t.Fatalf("expected ErrStaleVersion, got: %v", err)
+	}
+
+	// 3. Task update failure rolls back transaction
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnError(errors.New("db update error"))
+	mock.ExpectRollback()
+
+	err = repo.AssignTaskWithLog(context.Background(), task, version, log)
+	if err == nil {
+		t.Fatal("expected error on db update failure, got nil")
+	}
+
+	// 4. Task log create failure rolls back transaction
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks"`)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnError(errors.New("db log create error"))
+	mock.ExpectRollback()
+
+	err = repo.AssignTaskWithLog(context.Background(), task, version, log)
+	if err == nil {
+		t.Fatal("expected error on log create failure, got nil")
+	}
+}
+
 

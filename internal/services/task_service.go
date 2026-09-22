@@ -162,7 +162,7 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 		return nil, s.wrapError(ctx, err)
 	}
 
-	task, err := s.repo.FindTaskByID(ctx, taskID)
+	task, err := s.repo.FindTaskDetailByID(ctx, taskID)
 	if err != nil {
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to find task: %w", err))
 	}
@@ -170,7 +170,7 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 		return nil, constants.ErrTaskNotFound
 	}
 
-	return &dtos.TaskResponse{
+	resp := &dtos.TaskResponse{
 		ID:          task.ID,
 		Title:       task.Title,
 		Description: task.Description,
@@ -181,7 +181,58 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 		Version:     task.Version,
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
-	}, nil
+	}
+
+	if task.Creator != nil {
+		resp.Creator = &dtos.UserResponse{
+			ID:        task.Creator.ID,
+			Name:      task.Creator.Name,
+			Email:     task.Creator.Email,
+			TeamID:    task.Creator.TeamID,
+			CreatedAt: task.Creator.CreatedAt,
+			UpdatedAt: task.Creator.UpdatedAt,
+		}
+	}
+
+	if task.Assignee != nil {
+		resp.Assignee = &dtos.UserResponse{
+			ID:        task.Assignee.ID,
+			Name:      task.Assignee.Name,
+			Email:     task.Assignee.Email,
+			TeamID:    task.Assignee.TeamID,
+			CreatedAt: task.Assignee.CreatedAt,
+			UpdatedAt: task.Assignee.UpdatedAt,
+		}
+	}
+
+	if task.Team != nil {
+		resp.Team = &dtos.TeamResponse{
+			ID:        task.Team.ID,
+			Name:      task.Team.Name,
+			CreatedAt: task.Team.CreatedAt,
+			UpdatedAt: task.Team.UpdatedAt,
+		}
+	}
+
+	if len(task.Logs) > 0 {
+		resp.Logs = make([]*dtos.TaskLogResponse, 0, len(task.Logs))
+		for _, l := range task.Logs {
+			resp.Logs = append(resp.Logs, &dtos.TaskLogResponse{
+				ID:             l.ID,
+				Action:         l.Action,
+				ActorID:        l.ActorID,
+				FromAssigneeID: l.FromAssigneeID,
+				ToAssigneeID:   l.ToAssigneeID,
+				FromStatus:     l.FromStatus,
+				ToStatus:       l.ToStatus,
+				Notes:          l.Notes,
+				Metadata:       l.Metadata,
+				CreatedAt:      l.CreatedAt,
+			})
+		}
+	}
+
+	return resp, nil
 }
 
 // DeleteTask soft-deletes a task and records a DELETE audit log within the caller's team boundary.

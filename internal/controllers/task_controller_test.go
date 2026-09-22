@@ -384,6 +384,22 @@ func TestControllers_GetTaskByID_Success(t *testing.T) {
 		WithArgs(taskID, 1).
 		WillReturnRows(rows)
 
+	creatorRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id", "created_at", "updated_at"}).
+		AddRow(creatorID, "Creator User", "creator@example.com", teamID, now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+		WithArgs(creatorID).
+		WillReturnRows(creatorRows)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "task_logs" WHERE "task_logs"."task_id" = $1 ORDER BY created_at desc`)).
+		WithArgs(taskID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id"}))
+
+	teamRows := sqlmock.NewRows([]string{"id", "name", "created_at", "updated_at"}).
+		AddRow(teamID, "Core Team", now, now)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE "teams"."id" = $1`)).
+		WithArgs(teamID).
+		WillReturnRows(teamRows)
+
 	w := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(w)
 	ctx.Params = gin.Params{{Key: "id", Value: taskID.String()}}
@@ -405,6 +421,12 @@ func TestControllers_GetTaskByID_Success(t *testing.T) {
 	}
 	if !resp.Success || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "Task Title" {
 		t.Fatalf("unexpected task response: %+v", resp)
+	}
+	if resp.Data.Creator == nil || resp.Data.Creator.Name != "Creator User" {
+		t.Fatalf("expected creator to be populated, got: %+v", resp.Data.Creator)
+	}
+	if resp.Data.Team == nil || resp.Data.Team.Name != "Core Team" {
+		t.Fatalf("expected team to be populated, got: %+v", resp.Data.Team)
 	}
 }
 

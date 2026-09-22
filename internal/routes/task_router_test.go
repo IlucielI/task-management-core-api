@@ -147,6 +147,22 @@ func TestRouter_GetTaskByID_Success(t *testing.T) {
 		WithArgs(taskID, 1).
 		WillReturnRows(rows)
 
+	creatorRows := sqlmock.NewRows([]string{"id", "name", "email", "team_id"}).
+		AddRow(userID, "User Name", "user@example.com", teamID)
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1`)).
+		WithArgs(userID).
+		WillReturnRows(creatorRows)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "task_logs" WHERE "task_logs"."task_id" = $1 ORDER BY created_at desc`)).
+		WithArgs(taskID).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id"}))
+
+	teamRows := sqlmock.NewRows([]string{"id", "name"}).
+		AddRow(teamID, "Engineering Team")
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "teams" WHERE "teams"."id" = $1`)).
+		WithArgs(teamID).
+		WillReturnRows(teamRows)
+
 	req := httptest.NewRequest(http.MethodGet, "/v1/tasks/"+taskID.String(), nil)
 	req.Header.Set("Authorization", "Bearer "+tokenPair.AccessToken)
 

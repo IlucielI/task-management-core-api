@@ -39,6 +39,25 @@ func (r *Repositories) FindTaskByID(ctx context.Context, id uuid.UUID) (*models.
 	return &task, nil
 }
 
+// FindTaskDetailByID retrieves a task by its UUID with preloaded Creator, Assignee, Team, and Logs.
+func (r *Repositories) FindTaskDetailByID(ctx context.Context, id uuid.UUID) (*models.Task, error) {
+	var task models.Task
+	if err := r.db.WithContext(ctx).
+		Preload("Creator").
+		Preload("Assignee").
+		Preload("Team").
+		Preload("Logs", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at desc")
+		}).
+		First(&task, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &task, nil
+}
+
 // DeleteTaskWithLog soft-deletes a task by ID and inserts an audit log within a single database transaction.
 func (r *Repositories) DeleteTaskWithLog(ctx context.Context, id uuid.UUID, log *models.TaskLog) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

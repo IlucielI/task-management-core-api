@@ -31,16 +31,34 @@ type AssignTaskRequest struct {
 
 // TaskResponse represents formatted task entity returned to API clients.
 type TaskResponse struct {
-	ID          uuid.UUID  `json:"id"`
-	Title       string     `json:"title"`
-	Description string     `json:"description,omitempty"`
-	Status      string     `json:"status"`
-	CreatorID   uuid.UUID  `json:"creator_id"`
-	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
-	TeamID      uuid.UUID  `json:"team_id"`
-	Version     int        `json:"version"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          uuid.UUID          `json:"id"`
+	Title       string             `json:"title"`
+	Description string             `json:"description,omitempty"`
+	Status      string             `json:"status"`
+	CreatorID   uuid.UUID          `json:"creator_id"`
+	AssigneeID  *uuid.UUID         `json:"assignee_id,omitempty"`
+	TeamID      uuid.UUID          `json:"team_id"`
+	Version     int                `json:"version"`
+	CreatedAt   time.Time          `json:"created_at"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+	Creator     *UserResponse      `json:"creator,omitempty"`
+	Assignee    *UserResponse      `json:"assignee,omitempty"`
+	Team        *TeamResponse      `json:"team,omitempty"`
+	Logs        []*TaskLogResponse `json:"logs,omitempty"`
+}
+
+// TaskLogResponse represents an audit trail log entry for a task.
+type TaskLogResponse struct {
+	ID             uuid.UUID              `json:"id"`
+	Action         string                 `json:"action"`
+	ActorID        *uuid.UUID             `json:"actor_id,omitempty"`
+	FromAssigneeID *uuid.UUID             `json:"from_assignee_id,omitempty"`
+	ToAssigneeID   *uuid.UUID             `json:"to_assignee_id,omitempty"`
+	FromStatus     *string                `json:"from_status,omitempty"`
+	ToStatus       *string                `json:"to_status,omitempty"`
+	Notes          *string                `json:"notes,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
 }
 
 // CachedIdempotentResponse caches API response payload in Redis for 24h idempotency window.

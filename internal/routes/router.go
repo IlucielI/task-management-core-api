@@ -36,7 +36,7 @@ func NewRouter(cfg config.Config, ctrls *controllers.Controllers, authValidator 
 	}
 
 	router := gin.New()
-	router.Use(gin.Recovery(), gin.Logger(), middlewares.ClientMeta())
+	router.Use(middlewares.StructuredLogger(), gin.Recovery(), middlewares.ClientMeta())
 
 	// Central controllers container
 	if ctrls == nil {

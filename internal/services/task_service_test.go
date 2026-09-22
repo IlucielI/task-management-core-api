@@ -493,3 +493,144 @@ func TestService_GetTaskByID(t *testing.T) {
 	})
 }
 
+func TestService_DeleteTask(t *testing.T) {
+	cfg := config.Config{}
+	taskID := uuid.New()
+	creatorID := uuid.New()
+	assigneeID := uuid.New()
+	teamID := uuid.New()
+	otherTeamID := uuid.New()
+	now := time.Now()
+
+	t.Run("success", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		// 1. FindTaskByID
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "created_at", "updated_at"}).
+			AddRow(taskID, "Task Title", "Description", "in_progress", creatorID, assigneeID, teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(rows)
+
+		// 2. DeleteTaskWithLog in transaction
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks" SET "deleted_at"=$1 WHERE id = $2 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(sqlmock.AnyArg(), taskID).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+			WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uuid.New()))
+		mock.ExpectCommit()
+
+		err := svc.DeleteTask(ctx, taskID)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("not_found_in_db", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "title"}))
+
+		err := svc.DeleteTask(ctx, taskID)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound, got: %v", err)
+		}
+	})
+
+	t.Run("cross_team_isolation_returns_not_found", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "created_at", "updated_at"}).
+			AddRow(taskID, "Secret Task", "Desc", "todo", creatorID, nil, otherTeamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(rows)
+
+		err := svc.DeleteTask(ctx, taskID)
+		if !errors.Is(err, constants.ErrTaskNotFound) {
+			t.Fatalf("expected ErrTaskNotFound on cross-team delete, got: %v", err)
+		}
+	})
+
+	t.Run("unauthorized_missing_auth_user", func(t *testing.T) {
+		svc := New(cfg, nil, nil)
+
+		err := svc.DeleteTask(context.Background(), taskID)
+		if !errors.Is(err, constants.ErrUnauthorized) {
+			t.Fatalf("expected ErrUnauthorized, got: %v", err)
+		}
+	})
+
+	t.Run("db_error_on_find", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnError(errors.New("db query error"))
+
+		err := svc.DeleteTask(ctx, taskID)
+		if err == nil {
+			t.Fatal("expected error on db query failure, got nil")
+		}
+	})
+
+	t.Run("db_error_on_delete", func(t *testing.T) {
+		gormDB, mock := setupMockDB(t)
+		repo := repositories.New(gormDB)
+		svc := New(cfg, repo, nil)
+
+		ctx := ctxmeta.WithAuthUser(context.Background(), ctxmeta.AuthUser{
+			UserID: creatorID,
+			TeamID: teamID,
+		})
+
+		rows := sqlmock.NewRows([]string{"id", "title", "description", "status", "creator_id", "assignee_id", "team_id", "created_at", "updated_at"}).
+			AddRow(taskID, "Task Title", "Description", "todo", creatorID, nil, teamID, now, now)
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "tasks" WHERE id = $1 AND "tasks"."deleted_at" IS NULL ORDER BY "tasks"."id" LIMIT $2`)).
+			WithArgs(taskID, 1).
+			WillReturnRows(rows)
+
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks" SET "deleted_at"=$1 WHERE id = $2 AND "tasks"."deleted_at" IS NULL`)).
+			WithArgs(sqlmock.AnyArg(), taskID).
+			WillReturnError(errors.New("db delete error"))
+		mock.ExpectRollback()
+
+		err := svc.DeleteTask(ctx, taskID)
+		if err == nil {
+			t.Fatal("expected error on db delete failure, got nil")
+		}
+	})
+}
+

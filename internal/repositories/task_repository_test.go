@@ -140,3 +140,71 @@ func TestRepositories_FindTaskByID(t *testing.T) {
 	}
 }
 
+func TestRepositories_DeleteTaskWithLog(t *testing.T) {
+	gormDB, mock := setupMockDB(t)
+	repo := New(gormDB)
+
+	taskID := uuid.New()
+	logID := uuid.New()
+	now := time.Now()
+
+	log := &models.TaskLog{
+		ID:        logID,
+		Action:    "DELETE",
+		CreatedAt: now,
+	}
+
+	// 1. Success soft delete with audit log
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks" SET "deleted_at"=$1 WHERE id = $2 AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(sqlmock.AnyArg(), taskID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(logID))
+	mock.ExpectCommit()
+
+	err := repo.DeleteTaskWithLog(context.Background(), taskID, log)
+	if err != nil {
+		t.Fatalf("unexpected error deleting task with log: %v", err)
+	}
+
+	// 2. Task delete fails, transaction rolls back
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks" SET "deleted_at"=$1 WHERE id = $2 AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(sqlmock.AnyArg(), taskID).
+		WillReturnError(errors.New("db delete error"))
+	mock.ExpectRollback()
+
+	err = repo.DeleteTaskWithLog(context.Background(), taskID, log)
+	if err == nil {
+		t.Fatal("expected error on task delete failure, got nil")
+	}
+
+	// 3. Log insert fails, transaction rolls back
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks" SET "deleted_at"=$1 WHERE id = $2 AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(sqlmock.AnyArg(), taskID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "task_logs"`)).
+		WillReturnError(errors.New("db log insert error"))
+	mock.ExpectRollback()
+
+	err = repo.DeleteTaskWithLog(context.Background(), taskID, log)
+	if err == nil {
+		t.Fatal("expected error on log insert failure, got nil")
+	}
+
+	// 4. Success without log
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE "tasks" SET "deleted_at"=$1 WHERE id = $2 AND "tasks"."deleted_at" IS NULL`)).
+		WithArgs(sqlmock.AnyArg(), taskID).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err = repo.DeleteTaskWithLog(context.Background(), taskID, nil)
+	if err != nil {
+		t.Fatalf("unexpected error deleting task without log: %v", err)
+	}
+}
+
+

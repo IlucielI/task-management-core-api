@@ -179,4 +179,38 @@ func (s *Service) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*dtos.Task
 	}, nil
 }
 
+// DeleteTask soft-deletes a task and records a DELETE audit log within the caller's team boundary.
+func (s *Service) DeleteTask(ctx context.Context, taskID uuid.UUID) error {
+	authUser, err := s.getAuthUser(ctx)
+	if err != nil {
+		return s.wrapError(ctx, err)
+	}
 
+	task, err := s.repo.FindTaskByID(ctx, taskID)
+	if err != nil {
+		return s.wrapError(ctx, fmt.Errorf("failed to find task: %w", err))
+	}
+	if task == nil || task.TeamID != authUser.TeamID {
+		return constants.ErrTaskNotFound
+	}
+
+	now := time.Now()
+	notes := "Task deleted"
+	log := &models.TaskLog{
+		ID:             uuid.New(),
+		TaskID:         task.ID,
+		Action:         constants.TaskActionDelete,
+		ActorID:        &authUser.UserID,
+		FromAssigneeID: task.AssigneeID,
+		FromStatus:     &task.Status,
+		Notes:          &notes,
+		Metadata:       models.JSONMap{"source": "api"},
+		CreatedAt:      now,
+	}
+
+	if err := s.repo.DeleteTaskWithLog(ctx, task.ID, log); err != nil {
+		return s.wrapError(ctx, fmt.Errorf("failed to delete task: %w", err))
+	}
+
+	return nil
+}

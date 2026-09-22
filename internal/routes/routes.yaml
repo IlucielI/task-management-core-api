@@ -31,3 +31,8 @@ routes:
     handler: GetTaskByID
     auth: true
 
+  - method: DELETE
+    path: /v1/tasks/:id
+    handler: DeleteTask
+    auth: true
+

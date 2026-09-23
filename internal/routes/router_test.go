@@ -197,3 +197,44 @@ func TestRouter_PanicRecovery(t *testing.T) {
 	}
 }
 
+func TestRouter_DocsEndpoints(t *testing.T) {
+	cfg := config.Load()
+	ctrls := controllers.New(cfg, nil)
+	router := routes.NewRouter(cfg, ctrls)
+
+	tests := []struct {
+		path        string
+		contentType string
+		mustContain string
+	}{
+		{"/openapi.yaml", "application/x-yaml", "openapi: 3.0.3"},
+		{"/docs", "text/html", "@scalar/api-reference"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, err := http.NewRequest(http.MethodGet, tc.path, nil)
+			if err != nil {
+				t.Fatalf("failed to create request for %s: %v", tc.path, err)
+			}
+
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200 for %s, got %d", tc.path, w.Code)
+			}
+
+			ct := w.Header().Get("Content-Type")
+			if !strings.Contains(ct, tc.contentType) {
+				t.Errorf("expected Content-Type %s, got %s", tc.contentType, ct)
+			}
+
+			if !strings.Contains(w.Body.String(), tc.mustContain) {
+				t.Errorf("expected body to contain %q", tc.mustContain)
+			}
+		})
+	}
+}
+
+

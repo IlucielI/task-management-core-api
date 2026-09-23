@@ -6,6 +6,15 @@ routes:
     path: /v1/health
     handler: HealthCheck
 
+  # Documentation endpoints
+  - method: GET
+    path: /openapi.yaml
+    handler: OpenAPISpec
+
+  - method: GET
+    path: /docs
+    handler: APIDocs
+
   # Teams endpoint
   - method: GET
     path: /v1/teams

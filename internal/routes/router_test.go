@@ -114,11 +114,24 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 		WithArgs("%Engineering%", 10).
 		WillReturnRows(rows)
 
+	// 1. Without Basic Auth -> 401 Unauthorized
+	wUnauthorized := httptest.NewRecorder()
+	reqUnauthorized, err := http.NewRequest(http.MethodGet, "/v1/teams?name=Engineering", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	router.ServeHTTP(wUnauthorized, reqUnauthorized)
+	if wUnauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on missing basic auth, got %d", wUnauthorized.Code)
+	}
+
+	// 2. With valid Basic Auth -> 200 OK
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodGet, "/v1/teams?name=Engineering", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
+	req.SetBasicAuth(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
 
 	router.ServeHTTP(w, req)
 

@@ -49,6 +49,10 @@ type Config struct {
 	JWTSecret            string
 	JWTAccessExpiration  time.Duration
 	JWTRefreshExpiration time.Duration
+
+	// Basic Auth Configuration
+	BasicAuthUsername string
+	BasicAuthPassword string
 }
 
 func Load() Config {
@@ -94,6 +98,10 @@ func Load() Config {
 		JWTSecret:            getEnv("JWT_SECRET", "task-management-jwt-secret-key"),
 		JWTAccessExpiration:  getEnvDuration("JWT_ACCESS_EXPIRATION", 24*time.Hour),
 		JWTRefreshExpiration: getEnvDuration("JWT_REFRESH_EXPIRATION", 7*24*time.Hour),
+
+		// Basic Auth settings
+		BasicAuthUsername: getEnv("BASIC_AUTH_USERNAME", "client-app"),
+		BasicAuthPassword: getEnv("BASIC_AUTH_PASSWORD", "supersecretclientkey"),
 	}
 }
 

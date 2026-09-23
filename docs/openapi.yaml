@@ -37,6 +37,8 @@ paths:
       description: Retrieve paginated list of teams with optional case-insensitive name filter and dynamic sorting.
       tags:
         - Teams
+      security:
+        - BasicAuth: []
       parameters:
         - name: name
           in: query
@@ -78,13 +80,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid Client Basic Authentication credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /v1/auth/register:
     post:
       summary: Register User
-      description: Register a new user account associated with a team. Automatically hashes password with bcrypt.
+      description: Register a new user account associated with a team. Requires Client Basic Authentication. Automatically hashes password with bcrypt.
       tags:
         - Authentication
+      security:
+        - BasicAuth: []
       requestBody:
         required: true
         content:
@@ -114,9 +124,11 @@ paths:
   /v1/auth/login:
     post:
       summary: Login User
-      description: Authenticate user credentials and issue Access Token (15m) and Refresh Token (7d).
+      description: Authenticate user credentials and issue Access Token (15m) and Refresh Token (7d). Requires Client Basic Authentication.
       tags:
         - Authentication
+      security:
+        - BasicAuth: []
       requestBody:
         required: true
         content:
@@ -481,6 +493,10 @@ paths:
 
 components:
   securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+      description: Client application HTTP Basic Authentication (username & password)
     BearerAuth:
       type: http
       scheme: bearer

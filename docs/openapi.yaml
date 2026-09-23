@@ -656,7 +656,7 @@ components:
         team_id:
           type: string
           format: uuid
-          example: 00000000-0000-0000-0000-000000000001
+          example: e4b4f5aa-8fb8-4e33-911f-c0d12e879a51
 
     LoginRequest:
       type: object

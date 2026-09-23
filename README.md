@@ -9,6 +9,7 @@ Robust, multi-tenant Task Management REST API built with Go, Gin, GORM, PostgreS
 - [Prerequisites](#prerequisites)
 - [Environment Setup](#environment-setup)
 - [Running the Application](#running-the-application)
+- [Interactive API Documentation](#interactive-api-documentation)
 - [Running Tests](#running-tests)
 - [API Endpoints Reference](#api-endpoints-reference)
   - [System & Diagnostics](#system--diagnostics)
@@ -17,6 +18,7 @@ Robust, multi-tenant Task Management REST API built with Go, Gin, GORM, PostgreS
   - [Tasks](#tasks)
   - [Users](#users)
 - [Special Features](#special-features)
+  - [Client Application HTTP Basic Auth](#client-application-http-basic-auth)
   - [Idempotency (POST /v1/tasks)](#idempotency-post-v1tasks)
   - [Optimistic Concurrency Control](#optimistic-concurrency-control)
   - [Database Transaction & Audit Trail](#database-transaction--audit-trail)
@@ -34,6 +36,7 @@ The project follows Clean Architecture with strict separation of concerns and de
 ├── cmd/
 │   └── api/                # Application entrypoint & dependency wiring
 ├── deployment/             # Dockerfile & Docker Compose configurations
+├── docs/                   # Interactive Scalar API docs & OpenAPI 3.1 specification
 ├── migrations/             # Versioned SQL migration files
 └── internal/
     ├── adapters/           # Infrastructure adapters (PostgreSQL/GORM, Redis, S3)
@@ -41,7 +44,7 @@ The project follows Clean Architecture with strict separation of concerns and de
     ├── constants/          # Application-wide error codes, statuses, and response constants
     ├── controllers/        # HTTP handlers parsing requests and rendering JSON responses
     ├── dtos/               # Request payloads and API response definitions
-    ├── middlewares/        # HTTP middlewares (JWT Auth, Client Metadata, Structured Logger, Panic Recovery)
+    ├── middlewares/        # HTTP middlewares (JWT Auth, Basic Auth, Client Metadata, Logger, Panic Recovery)
     ├── models/             # Domain entities mapping to database tables
     ├── pkg/                # Reusable packages (AppError, Context Metadata, Notification)
     ├── repositories/       # Data access layer interfacing with GORM & Redis
@@ -56,8 +59,9 @@ The project follows Clean Architecture with strict separation of concerns and de
 
 | Requirement | Implementation Details | Status |
 | :--- | :--- | :---: |
-| **Authentication** | User registration, login, dual JWT tokens (Access & Refresh) | ✅ Complete |
+| **Authentication & Security** | User registration, login, dual JWT tokens (Access & Refresh), Client Basic Auth for public endpoints | ✅ Complete |
 | **Task CRUD** | Create, List (filter/search/pagination/sorting), Detail, Update, Delete | ✅ Complete |
+| **API Documentation** | Interactive Scalar OpenAPI 3.1 documentation served at `/docs` | ✅ Complete |
 | **1. Idempotency** | `Idempotency-Key` (UUID header), 24h Redis cache, concurrent race-condition safe | ✅ Complete |
 | **2. Structured Errors** | Unified `AppError`, consistent envelope, client (4xx) vs server (5xx) masking | ✅ Complete |
 | **3. Transaction & Integrity**| `POST /v1/tasks/:id/assign` with atomic DB transaction, audit logs (`task_logs`), async notification | ✅ Complete |
@@ -116,9 +120,13 @@ REDIS_PORT=6379
 REDIS_PASSWORD=
 
 # JWT Configuration
-JWT_SECRET=supersecretjwtkeychangeinproduction
-JWT_ACCESS_EXPIRY=15m
-JWT_REFRESH_EXPIRY=168h
+JWT_SECRET=task-management-jwt-secret-key
+JWT_ACCESS_EXPIRATION=24h
+JWT_REFRESH_EXPIRATION=168h
+
+# Client Application HTTP Basic Auth Configuration
+BASIC_AUTH_USERNAME=client-app
+BASIC_AUTH_PASSWORD=supersecretclientkey
 ```
 
 ---
@@ -127,7 +135,6 @@ JWT_REFRESH_EXPIRY=168h
 
 ### 1. Run Locally with Go
 ```bash
-# Run database migrations
 # Start PostgreSQL & Redis services locally or via docker-compose
 
 # Download dependencies
@@ -147,6 +154,20 @@ Build the application image (automatically builds base dependency image if missi
 # Start all containers in background
 docker compose -f deployment/docker-compose.yaml up -d
 ```
+
+---
+
+## Interactive API Documentation
+
+Interactive API documentation powered by [Scalar](https://github.com/scalar/scalar) and OpenAPI 3.1 is available out-of-the-box:
+- **Interactive Web UI**: [http://localhost:8080/docs](http://localhost:8080/docs)
+- **OpenAPI Specification**: [http://localhost:8080/docs/openapi.yaml](http://localhost:8080/docs/openapi.yaml)
+- **Health Check**: [http://localhost:8080/v1/health](http://localhost:8080/v1/health)
+
+Features:
+- Test and inspect all endpoints directly in your browser.
+- Pre-configured with Client HTTP Basic Auth (`client-app:supersecretclientkey`) and Bearer JWT security schemes.
+- Fast, modern dark/light responsive interface.
 
 ---
 
@@ -199,12 +220,19 @@ Check application and database health status.
 
 #### `GET /v1/teams`
 Retrieve all available teams with keyword filtering, customizable sorting, and pagination metadata.
-- **Auth**: None
+- **Auth**: Client HTTP Basic Auth
+  - Header: `Authorization: Basic <base64(username:password)>`
+  - Default Credentials: `client-app` / `supersecretclientkey`
 - **Query Parameters**:
   - `page` (default: 1)
   - `limit` (default: 10, max: 100)
   - `name` (optional: partial team name search keyword)
   - `order_by` (optional: `name-asc` (default), `name-desc`, `latest`, `earliest`)
+- **cURL Example**:
+  ```bash
+  curl -X GET "http://localhost:8080/v1/teams" \
+    -u "client-app:supersecretclientkey"
+  ```
 - **Response**: `200 OK`
 ```json
 {
@@ -237,7 +265,20 @@ Retrieve all available teams with keyword filtering, customizable sorting, and p
 
 #### `POST /v1/auth/register`
 Register a new user under a specific team.
-- **Auth**: None
+- **Auth**: Client HTTP Basic Auth
+  - Default Credentials: `client-app` / `supersecretclientkey`
+- **cURL Example**:
+  ```bash
+  curl -X POST "http://localhost:8080/v1/auth/register" \
+    -u "client-app:supersecretclientkey" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "Bayu Pratama",
+      "email": "bayu@example.com",
+      "password": "Password123!",
+      "team_id": "e4b4f5aa-8fb8-4e33-911f-c0d12e879a51"
+    }'
+  ```
 - **Request Body**:
 ```json
 {
@@ -267,7 +308,18 @@ Register a new user under a specific team.
 
 #### `POST /v1/auth/login`
 Authenticate user credentials and receive JWT token pair with user profile.
-- **Auth**: None
+- **Auth**: Client HTTP Basic Auth
+  - Default Credentials: `client-app` / `supersecretclientkey`
+- **cURL Example**:
+  ```bash
+  curl -X POST "http://localhost:8080/v1/auth/login" \
+    -u "client-app:supersecretclientkey" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "email": "bayu@example.com",
+      "password": "Password123!"
+    }'
+  ```
 - **Request Body**:
 ```json
 {
@@ -286,7 +338,7 @@ Authenticate user credentials and receive JWT token pair with user profile.
       "access_token": "eyJhbGciOi...",
       "refresh_token": "eyJhbGciOi...",
       "token_type": "Bearer",
-      "expires_in": 900,
+      "expires_in": 86400,
       "refresh_expires_in": 604800
     },
     "user": {
@@ -594,6 +646,12 @@ List users belonging to the caller's team with optional name and email filters a
 ---
 
 ## Special Features
+
+### Client Application HTTP Basic Auth
+- Protects public client-facing endpoints (`GET /v1/teams`, `POST /v1/auth/register`, `POST /v1/auth/login`) from unauthorized automated crawlers, bot spam, and open exposure.
+- Implements standard RFC 7617 HTTP Basic Authentication with constant-time string comparison (`crypto/subtle.ConstantTimeCompare`) to eliminate timing attacks.
+- Configurable via `BASIC_AUTH_USERNAME` and `BASIC_AUTH_PASSWORD` environment variables (default: `client-app:supersecretclientkey`).
+- Returns standardized `401 Unauthorized` JSON envelope on missing, malformed, or invalid credentials.
 
 ### Idempotency (`POST /v1/tasks`)
 - Client sends a unique UUID in `Idempotency-Key` header.

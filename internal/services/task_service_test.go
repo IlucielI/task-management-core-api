@@ -168,7 +168,7 @@ func TestService_CreateTask_Success_WithAssigneeAndCustomStatus(t *testing.T) {
 	client, rmock := redismock.NewClientMock()
 	rdb := redisAdapter.NewWithClient(client)
 	repo := repositories.New(gormDB, rdb)
-	svc := New(config.Config{}, repo, nil)
+	svc := New(config.Config{IdempotencyTTL: 24 * time.Hour}, repo, nil)
 
 	teamID := uuid.New()
 	creatorID := uuid.New()
@@ -234,7 +234,7 @@ func TestService_CreateTask_Success_DefaultStatusAndNoAssignee(t *testing.T) {
 	client, rmock := redismock.NewClientMock()
 	rdb := redisAdapter.NewWithClient(client)
 	repo := repositories.New(gormDB, rdb)
-	svc := New(config.Config{}, repo, nil)
+	svc := New(config.Config{IdempotencyTTL: 24 * time.Hour}, repo, nil)
 
 	teamID := uuid.New()
 	creatorID := uuid.New()

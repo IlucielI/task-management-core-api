@@ -53,6 +53,9 @@ type Config struct {
 	// Basic Auth Configuration
 	BasicAuthUsername string
 	BasicAuthPassword string
+
+	// Idempotency Configuration
+	IdempotencyTTL time.Duration
 }
 
 func Load() Config {
@@ -102,6 +105,9 @@ func Load() Config {
 		// Basic Auth settings
 		BasicAuthUsername: getEnv("BASIC_AUTH_USERNAME", "client-app"),
 		BasicAuthPassword: getEnv("BASIC_AUTH_PASSWORD", "supersecretclientkey"),
+
+		// Idempotency settings (default 24 hours, supports 1s, 5s, 1m, 5m, 1h, 24h)
+		IdempotencyTTL: getEnvDuration("IDEMPOTENCY_TTL", 24*time.Hour),
 	}
 }
 
@@ -160,7 +166,7 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	val, err := time.ParseDuration(valStr)
-	if err != nil {
+	if err != nil || val <= 0 {
 		return fallback
 	}
 	return val

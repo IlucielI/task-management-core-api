@@ -70,6 +70,9 @@ func TestConfig_LoadDefaults(t *testing.T) {
 	if cfg.S3ForcePathStyle != true {
 		t.Errorf("expected S3ForcePathStyle true, got %v", cfg.S3ForcePathStyle)
 	}
+	if cfg.IdempotencyTTL != 24*time.Hour {
+		t.Errorf("expected IdempotencyTTL 24h, got %v", cfg.IdempotencyTTL)
+	}
 }
 
 func TestConfig_CustomEnv(t *testing.T) {
@@ -229,5 +232,30 @@ func TestConfig_LoadS3Env(t *testing.T) {
 	}
 	if cfg.S3ForcePathStyle != false {
 		t.Errorf("expected S3ForcePathStyle false, got %v", cfg.S3ForcePathStyle)
+	}
+}
+
+func TestConfig_LoadIdempotencyTTLEnv(t *testing.T) {
+	testCases := []struct {
+		envVal   string
+		expected time.Duration
+	}{
+		{"1s", 1 * time.Second},
+		{"5s", 5 * time.Second},
+		{"1m", 1 * time.Minute},
+		{"5m", 5 * time.Minute},
+		{"1h", 1 * time.Hour},
+		{"24h", 24 * time.Hour},
+		{"0s", 24 * time.Hour},
+		{"-1s", 24 * time.Hour},
+		{"invalid", 24 * time.Hour},
+	}
+
+	for _, tc := range testCases {
+		t.Setenv("IDEMPOTENCY_TTL", tc.envVal)
+		cfg := config.Load()
+		if cfg.IdempotencyTTL != tc.expected {
+			t.Errorf("for IDEMPOTENCY_TTL=%q, expected %v, got %v", tc.envVal, tc.expected, cfg.IdempotencyTTL)
+		}
 	}
 }

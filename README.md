@@ -657,7 +657,7 @@ List users belonging to the caller's team with optional name and email filters a
 ### Idempotency (`POST /v1/tasks`)
 - Client sends a unique UUID in `Idempotency-Key` header.
 - Redis evaluates key existence atomically.
-- Subsequent identical requests within a 24-hour window return the cached response immediately.
+- Subsequent identical requests within the cache window (default 24 hours, configurable via `IDEMPOTENCY_TTL`, e.g. `1s`, `5s`, `1m`, `5m`, `1h`, `24h`) return the cached response immediately.
 - Concurrent duplicate requests are locked, ensuring only exactly one database record is created.
 
 ### Optimistic Concurrency Control

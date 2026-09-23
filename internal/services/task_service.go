@@ -130,14 +130,14 @@ func (s *Service) CreateTask(ctx context.Context, req dtos.CreateTaskRequest, id
 
 	taskResp := composeTaskResponse(task)
 
-	// 8. Cache response in Redis for 24 hours
+	// 8. Cache response in Redis with configurable TTL (default 24 hours from config)
 	cachedResp := &dtos.CachedIdempotentResponse{
 		StatusCode: http.StatusCreated,
 		Data:       taskResp,
 		Message:    "Task created successfully",
 		Timestamp:  now,
 	}
-	if err := s.repo.SaveIdempotencyResponse(ctx, cleanKey, cachedResp, 24*time.Hour); err != nil {
+	if err := s.repo.SaveIdempotencyResponse(ctx, cleanKey, cachedResp, s.cfg.IdempotencyTTL); err != nil {
 		return nil, s.wrapError(ctx, fmt.Errorf("failed to save idempotency cache: %w", err))
 	}
 

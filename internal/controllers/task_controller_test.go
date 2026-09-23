@@ -45,7 +45,7 @@ func TestControllers_CreateTask_MissingIdempotencyKey(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -220,7 +220,7 @@ func TestControllers_CreateTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || resp.Data.Title != "Frontend Navigation" {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || resp.Data.Title != "Frontend Navigation" {
 		t.Fatalf("unexpected response: %+v", resp)
 	}
 }
@@ -290,7 +290,7 @@ func TestControllers_GetTaskByID_InvalidUUID(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("failed to unmarshal response: %v", err)
 			}
-			if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+			if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 				t.Fatalf("expected bad request response, got: %+v", resp)
 			}
 		})
@@ -419,7 +419,7 @@ func TestControllers_GetTaskByID_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "Task Title" {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "Task Title" {
 		t.Fatalf("unexpected task response: %+v", resp)
 	}
 	if resp.Data.Creator == nil || resp.Data.Creator.Name != "Creator User" {
@@ -488,7 +488,7 @@ func TestControllers_DeleteTask_InvalidUUID(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -541,7 +541,7 @@ func TestControllers_DeleteTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess || resp.Message != "Task deleted successfully" {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess || resp.Message != "Task deleted successfully" {
 		t.Fatalf("unexpected delete response: %+v", resp)
 	}
 }
@@ -668,7 +668,7 @@ func TestControllers_ListTasks_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || len(resp.Data.Items) != 1 || resp.Data.Items[0].Title != "Fix issue" {
+	if resp.Status != constants.ResponseStatusSuccess || len(resp.Data.Items) != 1 || resp.Data.Items[0].Title != "Fix issue" {
 		t.Fatalf("unexpected items: %+v", resp.Data)
 	}
 	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Limit != 10 || resp.Data.Metadata.Page != 1 || resp.Data.Metadata.TotalPages != 1 {
@@ -693,7 +693,7 @@ func TestControllers_ListTasks_InvalidQuery(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -795,7 +795,7 @@ func TestControllers_UpdateTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success response, got: %+v", resp)
 	}
 	if resp.Data == nil || resp.Data.Title != newTitle || resp.Data.Status != newStatus || resp.Data.Version != 2 {
@@ -1145,7 +1145,7 @@ func TestControllers_AssignTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || *resp.Data.AssigneeID != assigneeID || resp.Data.Version != 2 {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || *resp.Data.AssigneeID != assigneeID || resp.Data.Version != 2 {
 		t.Fatalf("unexpected response payload: %+v", resp)
 	}
 }

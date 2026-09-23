@@ -12,5 +12,11 @@ const (
 )
 
 const (
+	ResponseStatusSuccess = "success"
+	ResponseStatusFail    = "fail"
+	ResponseStatusError   = "error"
+)
+
+const (
 	ResponseMessageSuccess = "Success"
 )

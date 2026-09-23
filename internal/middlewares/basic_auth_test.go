@@ -44,7 +44,7 @@ func TestBasicAuthMiddleware(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
-		if resp.Success || resp.Code != constants.ResponseCodeUnauthorized {
+		if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeUnauthorized {
 			t.Fatalf("expected unauthorized response envelope, got: %+v", resp)
 		}
 	})

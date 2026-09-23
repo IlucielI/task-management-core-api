@@ -15,7 +15,7 @@ func (c *Controllers) HealthCheck(ctx *gin.Context) {
 	servicesStatus := c.svc.CheckHealth(ctx.Request.Context())
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[dtos.HealthData]{
-		Success: true,
+		Status:  constants.ResponseStatusSuccess,
 		Code:    constants.ResponseCodeSuccess,
 		Message: constants.ResponseMessageSuccess,
 		Data: dtos.HealthData{

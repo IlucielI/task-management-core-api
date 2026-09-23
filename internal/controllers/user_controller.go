@@ -31,7 +31,7 @@ func (c *Controllers) ListUsers(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ListUsersData]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Users retrieved successfully",
 		Data:      res,

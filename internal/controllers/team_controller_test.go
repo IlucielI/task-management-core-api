@@ -74,7 +74,7 @@ func TestControllers_GetTeams_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success response, got: %+v", resp)
 	}
 	if len(resp.Data.Items) != 1 || resp.Data.Items[0].Name != "Engineering" {
@@ -111,7 +111,7 @@ func TestControllers_GetTeams_RepositoryError(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeInternalError {
+	if resp.Status != constants.ResponseStatusError || resp.Code != constants.ResponseCodeInternalError {
 		t.Fatalf("expected internal error response, got: %+v", resp)
 	}
 }
@@ -141,7 +141,7 @@ func TestControllers_GetTeams_ValidationError(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
-		if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+		if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 			t.Fatalf("expected bad request response, got: %+v", resp)
 		}
 	})

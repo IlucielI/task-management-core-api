@@ -40,8 +40,13 @@ func (c *Controllers) wrapError(ctx *gin.Context, err error) {
 
 	appErr := constants.ErrInternalServerError.Wrap(err)
 
+	status := constants.ResponseStatusError
+	if appErr.HTTPStatus >= 400 && appErr.HTTPStatus < 500 {
+		status = constants.ResponseStatusFail
+	}
+
 	ctx.JSON(appErr.HTTPStatus, dtos.BaseResponse{
-		Success:   false,
+		Status:    status,
 		Code:      appErr.Code,
 		Message:   appErr.Message,
 		Timestamp: time.Now(),

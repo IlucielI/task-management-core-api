@@ -507,9 +507,9 @@ components:
     BaseSuccessResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -523,9 +523,10 @@ components:
     ErrorResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: false
+        status:
+          type: string
+          enum: [fail, error]
+          example: fail
         code:
           type: string
           example: BAD_REQUEST
@@ -555,9 +556,9 @@ components:
     HealthResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -611,9 +612,9 @@ components:
     ListTeamsResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -698,9 +699,9 @@ components:
     RegisterSuccessResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -716,9 +717,9 @@ components:
     AuthSuccessResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -844,9 +845,9 @@ components:
     TaskItemResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -862,9 +863,9 @@ components:
     ListTasksResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK
@@ -909,9 +910,9 @@ components:
     ListUsersResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
+        status:
+          type: string
+          example: success
         code:
           type: string
           example: OK

@@ -38,7 +38,7 @@ func (c *Controllers) CreateTask(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.TaskResponse]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Task created successfully",
 		Data:      task,
@@ -61,7 +61,7 @@ func (c *Controllers) GetTaskByID(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.TaskResponse]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Task retrieved successfully",
 		Data:      task,
@@ -83,7 +83,7 @@ func (c *Controllers) DeleteTask(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.BaseResponse{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Task deleted successfully",
 		Timestamp: time.Now(),
@@ -110,7 +110,7 @@ func (c *Controllers) ListTasks(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ListTasksData]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Tasks retrieved successfully",
 		Data:      result,
@@ -144,7 +144,7 @@ func (c *Controllers) UpdateTask(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.TaskResponse]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Task updated successfully",
 		Data:      task,
@@ -178,7 +178,7 @@ func (c *Controllers) AssignTask(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.TaskResponse]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Task assigned successfully",
 		Data:      task,

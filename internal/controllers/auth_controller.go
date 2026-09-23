@@ -31,7 +31,7 @@ func (c *Controllers) Register(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, dtos.APIResponse[*dtos.UserResponse]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "User registered successfully",
 		Data:      user,
@@ -59,7 +59,7 @@ func (c *Controllers) Login(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.LoginResponse]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "User authenticated successfully",
 		Data:      resp,

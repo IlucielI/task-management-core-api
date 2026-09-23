@@ -91,14 +91,6 @@ func RunMigrations(sqlDB *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize migrate: %w", err)
 	}
-	defer func() {
-		srcErr, dbErr := m.Close()
-		if srcErr != nil || dbErr != nil {
-			// Resource cleanup completed with potential warnings
-			_ = srcErr
-			_ = dbErr
-		}
-	}()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("failed to run migrations: %w", err)

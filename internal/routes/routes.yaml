@@ -6,19 +6,31 @@ routes:
     path: /v1/health
     handler: HealthCheck
 
+  # Documentation endpoints
+  - method: GET
+    path: /openapi.yaml
+    handler: OpenAPISpec
+
+  - method: GET
+    path: /docs
+    handler: APIDocs
+
   # Teams endpoint
   - method: GET
     path: /v1/teams
     handler: GetTeams
+    basic_auth: true
 
   # Auth endpoints
   - method: POST
     path: /v1/auth/register
     handler: Register
+    basic_auth: true
 
   - method: POST
     path: /v1/auth/login
     handler: Login
+    basic_auth: true
 
   # Task endpoints
   - method: GET

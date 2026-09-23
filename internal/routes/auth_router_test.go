@@ -64,12 +64,23 @@ func TestRouter_Register_RouteRegistered(t *testing.T) {
 	mock.ExpectCommit()
 
 	bodyBytes, _ := json.Marshal(reqPayload)
+
+	// Verify unauthorized without Basic Auth
+	wUnauthorized := httptest.NewRecorder()
+	reqUnauthorized, _ := http.NewRequest(http.MethodPost, "/v1/auth/register", bytes.NewReader(bodyBytes))
+	reqUnauthorized.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wUnauthorized, reqUnauthorized)
+	if wUnauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on missing basic auth, got %d", wUnauthorized.Code)
+	}
+
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodPost, "/v1/auth/register", bytes.NewReader(bodyBytes))
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
 
 	router.ServeHTTP(w, req)
 
@@ -127,12 +138,23 @@ func TestRouter_Login_RouteRegistered(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(reqPayload)
+
+	// Verify unauthorized without Basic Auth
+	wUnauthorized := httptest.NewRecorder()
+	reqUnauthorized, _ := http.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(bodyBytes))
+	reqUnauthorized.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(wUnauthorized, reqUnauthorized)
+	if wUnauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 on missing basic auth, got %d", wUnauthorized.Code)
+	}
+
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodPost, "/v1/auth/login", bytes.NewReader(bodyBytes))
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(cfg.BasicAuthUsername, cfg.BasicAuthPassword)
 
 	router.ServeHTTP(w, req)
 

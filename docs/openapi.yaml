@@ -1,0 +1,932 @@
+openapi: 3.0.3
+info:
+  title: Task Management Core API
+  version: 1.0.0
+  description: |
+    Multi-tenant Task Management REST API built with Go, Gin, GORM, PostgreSQL, and Redis.
+    Features:
+    - JWT Authentication & Team Multi-Tenancy Boundary Isolation
+    - Idempotency with Redis 24h Window & Distributed Locking (`POST /v1/tasks`)
+    - Optimistic Concurrency Control via `version` column
+    - Database Transaction & Integrity (`POST /v1/tasks/:id/assign`)
+    - Structured JSON Request Logging & Observability (`X-Request-ID`)
+    - Global Panic Recovery Handler returning unified JSON error envelope
+
+servers:
+  - url: /
+    description: Primary API Server
+
+paths:
+  /v1/health:
+    get:
+      summary: Health & Diagnostics Check
+      description: Returns service uptime, application version, git commit hash, and connection status for PostgreSQL, Redis, and S3.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Health check diagnostics payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/teams:
+    get:
+      summary: List Teams
+      description: Retrieve paginated list of teams with optional case-insensitive name filter and dynamic sorting.
+      tags:
+        - Teams
+      security:
+        - BasicAuth: []
+      parameters:
+        - name: name
+          in: query
+          description: Filter teams by name (case-insensitive substring match)
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number (default 1)
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          description: Number of items per page (default 10, max 100)
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: order_by
+          in: query
+          description: Dynamic sorting field and order
+          schema:
+            type: string
+            enum: [latest, earliest, name-asc, name-desc]
+            default: name-asc
+      responses:
+        '200':
+          description: Successfully retrieved teams
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTeamsResponse'
+        '400':
+          description: Validation or parameter error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid Client Basic Authentication credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/register:
+    post:
+      summary: Register User
+      description: Register a new user account associated with a team. Requires Client Basic Authentication. Automatically hashes password with bcrypt.
+      tags:
+        - Authentication
+      security:
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterSuccessResponse'
+        '400':
+          description: Invalid request body or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/login:
+    post:
+      summary: Login User
+      description: Authenticate user credentials and issue Access Token (15m) and Refresh Token (7d). Requires Client Basic Authentication.
+      tags:
+        - Authentication
+      security:
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSuccessResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks:
+    get:
+      summary: List Tasks
+      description: Retrieve tasks belonging to the authenticated user's team. Supports filtering, searching, dynamic sorting, and pagination.
+      tags:
+        - Tasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: title
+          in: query
+          description: Case-insensitive search query on task title
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter tasks by lifecycle status
+          schema:
+            type: string
+            enum: [todo, in_progress, done]
+        - name: team_id
+          in: query
+          description: Filter by team ID (must match caller's team)
+          schema:
+            type: string
+            format: uuid
+        - name: creator_id
+          in: query
+          description: Filter by creator UUID
+          schema:
+            type: string
+            format: uuid
+        - name: assignee_id
+          in: query
+          description: Filter by assignee UUID
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          description: Page number (default 1)
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          description: Items per page (default 10, max 100)
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: order_by
+          in: query
+          description: Dynamic sorting clause
+          schema:
+            type: string
+            enum: [latest, earliest, title-asc, title-desc]
+            default: latest
+      responses:
+        '200':
+          description: Successfully retrieved tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTasksResponse'
+        '401':
+          description: Unauthorized access or invalid JWT token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create Task (Idempotent)
+      description: |
+        Create a new task within the caller's team.
+        Requires `Idempotency-Key` header (UUID). Repeated requests within 24 hours return identical cached responses without duplicate creation.
+      tags:
+        - Tasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique UUID key to prevent duplicate creation on network retries
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Task created successfully (or cached response returned)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemResponse'
+        '400':
+          description: Validation error or invalid Idempotency-Key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{id}:
+    get:
+      summary: Get Task Details
+      description: Retrieve detailed information for a single task by ID. Enforces strict team boundary isolation.
+      tags:
+        - Tasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the task
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemResponse'
+        '404':
+          description: Task not found or belongs to another team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update Task (Optimistic Concurrency Control)
+      description: |
+        Update task fields (title, description, status, assignee_id).
+        Requires `version` integer for optimistic locking. Returns 409 Conflict if version is stale.
+      tags:
+        - Tasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the task to update
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Stale version conflict (optimistic lock failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete Task
+      description: Permanently delete a task belonging to the caller's team.
+      tags:
+        - Tasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the task
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseSuccessResponse'
+        '404':
+          description: Task not found or not in caller's team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{id}/assign:
+    post:
+      summary: Assign Task (Atomic DB Transaction)
+      description: |
+        Assign task to another user within the same team.
+        Executed within a single ACID transaction: updates assignee, writes to `task_logs` audit table, and dispatches notification with rollback on failure.
+      tags:
+        - Tasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the task to assign
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignTaskRequest'
+      responses:
+        '200':
+          description: Task assigned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskItemResponse'
+        '400':
+          description: Validation error or assignee not in the same team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Optimistic lock conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/users:
+    get:
+      summary: List Team Users
+      description: Retrieve members of the caller's team with optional name and email filters, dynamic sorting, and pagination.
+      tags:
+        - Users
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          description: Filter users by name (case-insensitive substring)
+          schema:
+            type: string
+        - name: email
+          in: query
+          description: Filter users by email (case-insensitive substring)
+          schema:
+            type: string
+        - name: team_id
+          in: query
+          description: Filter by team ID (must match caller's team)
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          description: Page number (default 1)
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          description: Items per page (default 10, max 100)
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: order_by
+          in: query
+          description: Dynamic sorting order
+          schema:
+            type: string
+            enum: [name-asc, name-desc, email-asc, email-desc, latest, earliest]
+            default: name-asc
+      responses:
+        '200':
+          description: Successfully retrieved team members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListUsersResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+      description: Client application HTTP Basic Authentication (username & password)
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Provide JWT access token (Bearer <token>)
+
+  schemas:
+    BaseSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Task deleted successfully
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        code:
+          type: string
+          example: BAD_REQUEST
+        message:
+          type: string
+          example: Validation failed
+        timestamp:
+          type: string
+          format: date-time
+
+    PageMetadata:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 42
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+        total_pages:
+          type: integer
+          example: 5
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Success
+        data:
+          type: object
+          properties:
+            version:
+              type: string
+              example: 0.1.0
+            git_hash:
+              type: string
+              example: dev
+            uptime:
+              type: string
+              example: 1h23m45s
+            services:
+              type: object
+              properties:
+                database:
+                  type: string
+                  example: connected
+                redis:
+                  type: string
+                  example: connected
+                s3:
+                  type: string
+                  example: connected
+        timestamp:
+          type: string
+          format: date-time
+
+    TeamItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Engineering
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ListTeamsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Success
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/TeamItem'
+            metadata:
+              $ref: '#/components/schemas/PageMetadata'
+        timestamp:
+          type: string
+          format: date-time
+
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+        - team_id
+      properties:
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        password:
+          type: string
+          format: password
+          example: SecretPassword123!
+        team_id:
+          type: string
+          format: uuid
+          example: 00000000-0000-0000-0000-000000000001
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        password:
+          type: string
+          format: password
+          example: SecretPassword123!
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        team_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RegisterSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: User registered successfully
+        data:
+          $ref: '#/components/schemas/AuthUser'
+        timestamp:
+          type: string
+          format: date-time
+
+    AuthSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Success
+        data:
+          type: object
+          properties:
+            access_token:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            refresh_token:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            token_type:
+              type: string
+              example: Bearer
+            expires_in:
+              type: integer
+              example: 900
+            user:
+              $ref: '#/components/schemas/AuthUser'
+        timestamp:
+          type: string
+          format: date-time
+
+    CreateTaskRequest:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          maxLength: 255
+          example: Implement Redis Caching
+        description:
+          type: string
+          example: Add distributed locking and 24h key cache
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+          default: todo
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    UpdateTaskRequest:
+      type: object
+      required:
+        - version
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          example: 1
+        title:
+          type: string
+          maxLength: 255
+          example: Updated Task Title
+        description:
+          type: string
+          example: Updated task description
+        status:
+          type: string
+          enum: [todo, in_progress, done]
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    AssignTaskRequest:
+      type: object
+      required:
+        - assignee_id
+        - version
+      properties:
+        assignee_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        version:
+          type: integer
+          minimum: 1
+          example: 1
+
+    TaskItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Implement Redis Caching
+        description:
+          type: string
+          example: Add distributed locking and 24h key cache
+        status:
+          type: string
+          example: in_progress
+        creator_id:
+          type: string
+          format: uuid
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+        team_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          example: 2
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TaskItemResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Success
+        data:
+          $ref: '#/components/schemas/TaskItem'
+        timestamp:
+          type: string
+          format: date-time
+
+    ListTasksResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Success
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/TaskItem'
+            metadata:
+              $ref: '#/components/schemas/PageMetadata'
+        timestamp:
+          type: string
+          format: date-time
+
+    UserItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Alice Smith
+        email:
+          type: string
+          example: alice@example.com
+        team_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ListUsersResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        code:
+          type: string
+          example: OK
+        message:
+          type: string
+          example: Success
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserItem'
+            metadata:
+              $ref: '#/components/schemas/PageMetadata'
+        timestamp:
+          type: string
+          format: date-time

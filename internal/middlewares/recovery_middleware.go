@@ -89,7 +89,7 @@ func Recovery(opts ...RecoveryOption) gin.HandlerFunc {
 
 				// 3. Return unified JSON error response without exposing internal error or stack trace
 				resp := dtos.BaseResponse{
-					Success:   false,
+					Status:    constants.ResponseStatusError,
 					Code:      constants.ResponseCodeInternalError,
 					Message:   "An internal server error occurred",
 					Timestamp: time.Now().UTC(),

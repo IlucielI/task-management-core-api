@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,9 +24,10 @@ func Auth(validator AuthValidator) gin.HandlerFunc {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "missing authorization header",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "missing authorization header",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -33,9 +35,10 @@ func Auth(validator AuthValidator) gin.HandlerFunc {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid authorization header format, expected 'Bearer <token>'",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid authorization header format, expected 'Bearer <token>'",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -43,9 +46,10 @@ func Auth(validator AuthValidator) gin.HandlerFunc {
 		tokenStr := strings.TrimSpace(parts[1])
 		if tokenStr == "" || validator == nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid or expired token",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid or expired token",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -53,9 +57,10 @@ func Auth(validator AuthValidator) gin.HandlerFunc {
 		authUser, err := validator.Authenticate(c.Request.Context(), tokenStr)
 		if err != nil || authUser == nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid or expired token",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid or expired token",
+				Timestamp: time.Now(),
 			})
 			return
 		}

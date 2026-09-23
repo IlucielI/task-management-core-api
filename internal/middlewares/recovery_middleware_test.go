@@ -75,8 +75,8 @@ func TestRecovery_CatchesPanicAndReturnsUnifiedEnvelope(t *testing.T) {
 		t.Fatalf("failed to parse JSON response: %v, body: %s", err, w.Body.String())
 	}
 
-	if resp.Success {
-		t.Errorf("expected success false, got true")
+	if resp.Status != constants.ResponseStatusError {
+		t.Errorf("expected status 'error', got %q", resp.Status)
 	}
 	if resp.Code != constants.ResponseCodeInternalError {
 		t.Errorf("expected code %q, got %q", constants.ResponseCodeInternalError, resp.Code)

@@ -41,7 +41,7 @@ func TestControllers_wrapError(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("failed to decode response: %v", err)
 		}
-		if resp.Success || resp.Code != "CONFLICT" || resp.Message != "resource conflict" {
+		if resp.Status != constants.ResponseStatusFail || resp.Code != "CONFLICT" || resp.Message != "resource conflict" {
 			t.Fatalf("unexpected response payload: %+v", resp)
 		}
 	})

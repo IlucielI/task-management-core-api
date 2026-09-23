@@ -78,7 +78,7 @@ func TestControllers_Register_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success response, got: %+v", resp)
 	}
 	if resp.Data == nil || resp.Data.Email != "alice@example.com" {
@@ -106,7 +106,7 @@ func TestControllers_Register_InvalidJSON(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -139,7 +139,7 @@ func TestControllers_Register_ValidationError(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -181,7 +181,7 @@ func TestControllers_Register_DomainErrors(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest || resp.Message != constants.ErrTeamNotFound.Error() {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest || resp.Message != constants.ErrTeamNotFound.Error() {
 		t.Fatalf("expected team not found message, got: %+v", resp)
 	}
 
@@ -214,7 +214,7 @@ func TestControllers_Register_DomainErrors(t *testing.T) {
 	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp2.Success || resp2.Code != constants.ResponseCodeBadRequest || resp2.Message != constants.ErrEmailAlreadyExists.Error() {
+	if resp2.Status != constants.ResponseStatusFail || resp2.Code != constants.ResponseCodeBadRequest || resp2.Message != constants.ErrEmailAlreadyExists.Error() {
 		t.Fatalf("expected email already registered message, got: %+v", resp2)
 	}
 
@@ -292,7 +292,7 @@ func TestControllers_Login_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success response, got: %+v", resp)
 	}
 	if resp.Data == nil || resp.Data.Tokens.AccessToken == "" || resp.Data.Tokens.RefreshToken == "" {
@@ -323,7 +323,7 @@ func TestControllers_Login_InvalidJSON(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -354,7 +354,7 @@ func TestControllers_Login_ValidationError(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeBadRequest {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeBadRequest {
 		t.Fatalf("expected bad request response, got: %+v", resp)
 	}
 }
@@ -396,7 +396,7 @@ func TestControllers_Login_InvalidCredentials(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp.Success || resp.Code != constants.ResponseCodeUnauthorized || resp.Message != constants.ErrInvalidCredentials.Error() {
+	if resp.Status != constants.ResponseStatusFail || resp.Code != constants.ResponseCodeUnauthorized || resp.Message != constants.ErrInvalidCredentials.Error() {
 		t.Fatalf("expected unauthorized response with ErrInvalidCredentials, got: %+v", resp)
 	}
 }

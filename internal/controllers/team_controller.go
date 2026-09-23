@@ -31,7 +31,7 @@ func (c *Controllers) GetTeams(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, dtos.APIResponse[*dtos.ListTeamsData]{
-		Success:   true,
+		Status:    constants.ResponseStatusSuccess,
 		Code:      constants.ResponseCodeSuccess,
 		Message:   "Teams retrieved successfully",
 		Data:      teams,

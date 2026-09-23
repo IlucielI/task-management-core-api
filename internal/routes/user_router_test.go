@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"task-management/internal/config"
+	"task-management/internal/constants"
 	"task-management/internal/controllers"
 	"task-management/internal/dtos"
 	"task-management/internal/models"
@@ -81,7 +82,7 @@ func TestRouter_ListUsers_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || len(resp.Data.Items) != 1 || resp.Data.Items[0].Name != "Caller User" {
+	if resp.Status != constants.ResponseStatusSuccess || len(resp.Data.Items) != 1 || resp.Data.Items[0].Name != "Caller User" {
 		t.Fatalf("unexpected items: %+v", resp.Data)
 	}
 	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Limit != 10 || resp.Data.Metadata.Page != 1 || resp.Data.Metadata.TotalPages != 1 {

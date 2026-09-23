@@ -62,8 +62,8 @@ func TestRouter_HealthCheck(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if !resp.Success {
-		t.Errorf("expected success true, got %v", resp.Success)
+	if resp.Status != constants.ResponseStatusSuccess {
+		t.Errorf("expected status 'success', got %v", resp.Status)
 	}
 	if resp.Code != constants.ResponseCodeSuccess {
 		t.Errorf("expected code %q, got %q", constants.ResponseCodeSuccess, resp.Code)
@@ -148,7 +148,7 @@ func TestRouter_GetTeams_RouteRegistered(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success envelope response, got: %+v", resp)
 	}
 	if len(resp.Data.Items) != 1 || resp.Data.Items[0].Name != "Engineering" {
@@ -191,8 +191,8 @@ func TestRouter_PanicRecovery(t *testing.T) {
 		t.Fatalf("failed to unmarshal JSON response: %v, body: %s", err, w.Body.String())
 	}
 
-	if resp.Success {
-		t.Errorf("expected success false, got true")
+	if resp.Status != constants.ResponseStatusError {
+		t.Errorf("expected status 'error', got %q", resp.Status)
 	}
 	if resp.Code != constants.ResponseCodeInternalError {
 		t.Errorf("expected code %q, got %q", constants.ResponseCodeInternalError, resp.Code)

@@ -94,7 +94,7 @@ func TestRouter_CreateTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || resp.Data.Title != "E2E Route Task" {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || resp.Data.Title != "E2E Route Task" {
 		t.Fatalf("unexpected response body: %+v", resp)
 	}
 	if resp.Data.CreatorID != userID || resp.Data.TeamID != teamID {
@@ -177,7 +177,7 @@ func TestRouter_GetTaskByID_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "E2E Detail Task" {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || resp.Data.ID != taskID || resp.Data.Title != "E2E Detail Task" {
 		t.Fatalf("unexpected response body: %+v", resp)
 	}
 	if resp.Data.CreatorID != userID || resp.Data.TeamID != teamID {
@@ -254,7 +254,7 @@ func TestRouter_DeleteTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Code != "OK" || resp.Message != "Task deleted successfully" {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != "OK" || resp.Message != "Task deleted successfully" {
 		t.Fatalf("unexpected response body: %+v", resp)
 	}
 }
@@ -321,7 +321,7 @@ func TestRouter_ListTasks_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || len(resp.Data.Items) != 1 || resp.Data.Items[0].Title != "E2E List Task" {
+	if resp.Status != constants.ResponseStatusSuccess || len(resp.Data.Items) != 1 || resp.Data.Items[0].Title != "E2E List Task" {
 		t.Fatalf("unexpected items: %+v", resp.Data)
 	}
 	if resp.Data.Metadata.Count != 1 || resp.Data.Metadata.Limit != 10 || resp.Data.Metadata.Page != 2 || resp.Data.Metadata.TotalPages != 1 {
@@ -408,7 +408,7 @@ func TestRouter_UpdateTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || resp.Data.Title != newTitle || resp.Data.Status != newStatus || resp.Data.Version != 2 {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || resp.Data.Title != newTitle || resp.Data.Status != newStatus || resp.Data.Version != 2 {
 		t.Fatalf("unexpected response data: %+v", resp.Data)
 	}
 }
@@ -496,7 +496,7 @@ func TestRouter_AssignTask_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if !resp.Success || resp.Data == nil || *resp.Data.AssigneeID != assigneeID || resp.Data.Version != 2 {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Data == nil || *resp.Data.AssigneeID != assigneeID || resp.Data.Version != 2 {
 		t.Fatalf("unexpected response data: %+v", resp.Data)
 	}
 }

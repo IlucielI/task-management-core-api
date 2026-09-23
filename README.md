@@ -183,9 +183,10 @@ go test -v -count=1 ./...
 
 ## API Endpoints Reference
 
-All endpoints return JSON wrapped in standard envelopes:
-- **Success Envelope**: `{"success": true, "code": "OK", "message": "...", "data": ..., "timestamp": "2026-09-23T02:00:00Z"}`
-- **Error Envelope**: `{"success": false, "code": "<ERROR_CODE>", "message": "...", "timestamp": "2026-09-23T02:00:00Z"}`
+All endpoints return JSON wrapped in standard envelopes conforming to JSend & Technical Test specifications:
+- **Success Envelope (2xx)**: `{"status": "success", "code": "OK", "message": "...", "data": ..., "timestamp": "2026-09-23T02:00:00Z"}`
+- **Client Error Envelope (4xx)**: `{"status": "fail", "code": "<CLIENT_ERROR_CODE>", "message": "...", "timestamp": "2026-09-23T02:00:00Z"}`
+- **Server Error Envelope (5xx)**: `{"status": "error", "code": "INTERNAL_SERVER_ERROR", "message": "...", "timestamp": "2026-09-23T02:00:00Z"}`
 
 ---
 
@@ -197,7 +198,7 @@ Check application and database health status.
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Success",
   "data": {
@@ -236,7 +237,7 @@ Retrieve all available teams with keyword filtering, customizable sorting, and p
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Teams retrieved successfully",
   "data": {
@@ -291,7 +292,7 @@ Register a new user under a specific team.
 - **Response**: `201 Created`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "User registered successfully",
   "data": {
@@ -330,7 +331,7 @@ Authenticate user credentials and receive JWT token pair with user profile.
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "User authenticated successfully",
   "data": {
@@ -400,7 +401,7 @@ Create a new task with required 24h idempotency key.
 - **Response**: `201 Created`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Task created successfully",
   "data": {
@@ -434,7 +435,7 @@ List tasks with status filtering, title search, user/team filters, customizable 
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Tasks retrieved successfully",
   "data": {
@@ -469,7 +470,7 @@ Retrieve task details by UUID within the caller's team, enriched with creator, a
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Task retrieved successfully",
   "data": {
@@ -536,7 +537,7 @@ Update task fields with optimistic locking protection.
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Task updated successfully",
   "data": {
@@ -562,7 +563,7 @@ Soft-deletes a task and writes a deletion entry to audit log.
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Task deleted successfully",
   "timestamp": "2026-09-23T02:00:00Z"
@@ -582,7 +583,7 @@ Assign a task to another user within the same team.
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Task assigned successfully",
   "data": {
@@ -618,7 +619,7 @@ List users belonging to the caller's team with optional name and email filters a
 - **Response**: `200 OK`
 ```json
 {
-  "success": true,
+  "status": "success",
   "code": "OK",
   "message": "Users retrieved successfully",
   "data": {
@@ -698,7 +699,7 @@ List users belonging to the caller's team with optional name and email filters a
 - Returns a standardized HTTP 500 error envelope conforming to `BaseResponse`:
   ```json
   {
-    "success": false,
+    "status": "error",
     "code": "INTERNAL_SERVER_ERROR",
     "message": "An internal server error occurred",
     "timestamp": "2026-03-30T12:00:00Z"

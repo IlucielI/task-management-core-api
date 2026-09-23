@@ -93,7 +93,7 @@ func TestRouter_Register_RouteRegistered(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success envelope response, got: %+v", resp)
 	}
 	if resp.Data == nil || resp.Data.Email != "bob@example.com" {
@@ -167,7 +167,7 @@ func TestRouter_Login_RouteRegistered(t *testing.T) {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	if !resp.Success || resp.Code != constants.ResponseCodeSuccess {
+	if resp.Status != constants.ResponseStatusSuccess || resp.Code != constants.ResponseCodeSuccess {
 		t.Fatalf("expected success envelope response, got: %+v", resp)
 	}
 	if resp.Data == nil || resp.Data.Tokens.AccessToken == "" || resp.Data.Tokens.RefreshToken == "" {

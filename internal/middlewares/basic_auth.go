@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,9 +21,10 @@ func BasicAuth(expectedUser, expectedPass string) gin.HandlerFunc {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "missing authorization header",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "missing authorization header",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -30,9 +32,10 @@ func BasicAuth(expectedUser, expectedPass string) gin.HandlerFunc {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Basic") {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid authorization header format, expected 'Basic <credentials>'",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid authorization header format, expected 'Basic <credentials>'",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -40,9 +43,10 @@ func BasicAuth(expectedUser, expectedPass string) gin.HandlerFunc {
 		payload, err := base64.StdEncoding.DecodeString(parts[1])
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid basic auth encoding",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid basic auth encoding",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -50,9 +54,10 @@ func BasicAuth(expectedUser, expectedPass string) gin.HandlerFunc {
 		pair := strings.SplitN(string(payload), ":", 2)
 		if len(pair) != 2 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid basic auth credentials format, expected 'username:password'",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid basic auth credentials format, expected 'username:password'",
+				Timestamp: time.Now(),
 			})
 			return
 		}
@@ -62,9 +67,10 @@ func BasicAuth(expectedUser, expectedPass string) gin.HandlerFunc {
 
 		if !userMatch || !passMatch {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dtos.BaseResponse{
-				Success: false,
-				Code:    constants.ResponseCodeUnauthorized,
-				Message: "invalid basic auth credentials",
+				Status:    constants.ResponseStatusFail,
+				Code:      constants.ResponseCodeUnauthorized,
+				Message:   "invalid basic auth credentials",
+				Timestamp: time.Now(),
 			})
 			return
 		}
